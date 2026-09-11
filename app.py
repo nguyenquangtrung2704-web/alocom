@@ -2382,29 +2382,35 @@ with tab3:
                 "Quản trị viên xác nhận sau khi thực tế nhận được tiền chuyển khoản. "
                 "Khi chuyển sang Đã thanh toán và bấm Cập nhật, ngày xác nhận sẽ tự động lấy ngày hiện hành của hệ thống."
             )
- # ---------------- QR CHUYỂN KHOẢN ----------------
-        qr_path = FilePath("bank_qr.png")
 
-        qr_col1, qr_col2 = st.columns([1.2, 3.8])
+            # ---------------- QR CHUYỂN KHOẢN ----------------
+            qr_path = FilePath("bank_qr.png")
+            qr_col1, qr_col2 = st.columns([1.25, 3.75], vertical_alignment="center")
 
-        with qr_col1:
-            if qr_path.exists():
-                st.image(
-                    str(qr_path),
-                    caption="Quét QR để chuyển khoản",
-                    width=220
+            with qr_col1:
+                if qr_path.exists():
+                    st.image(
+                        str(qr_path),
+                        caption="Quét QR để chuyển khoản",
+                        width=230
+                    )
+                else:
+                    st.info(
+                        "Chưa có ảnh QR. Hãy tải file bank_qr.png lên cùng thư mục với app.py trên GitHub."
+                    )
+
+            with qr_col2:
+                st.markdown("#### 📱 Quét mã QR để chuyển khoản")
+                st.write(
+                    "Sau khi chuyển khoản, vui lòng chờ quản trị viên xác nhận. "
+                    "Trạng thái sẽ được cập nhật tại bảng bên dưới."
                 )
-            else:
-                st.info("Chưa tìm thấy ảnh QR bank_qr.png")
+                st.caption(
+                    "💡 Khi tải ảnh QR lên GitHub, hãy đặt đúng tên file: bank_qr.png"
+                )
 
-        with qr_col2:
-            st.markdown("#### 📱 Quét mã QR để chuyển khoản")
-            st.write(
-                "Vui lòng quét mã QR bên cạnh để chuyển khoản. "
-                "Sau khi chuyển khoản thành công, quản trị viên sẽ xác nhận trạng thái thanh toán."
-            )
+            st.divider()
 
-        st.divider()
             try:
                 payment_map = load_monthly_payments(selected_year, selected_month)
                 dashboard_members = load_members(include_inactive=True) if supabase else []
