@@ -1866,18 +1866,25 @@ with tab2:
             else:
                 # Hiển thị nhanh các món đã được đặt trong ngày đang chọn.
                 # Dùng dict.fromkeys để loại món trùng nhưng vẫn giữ thứ tự xuất hiện.
-                ordered_dishes = list(dict.fromkeys(
-                    str(r.get("dish_name", "")).strip()
-                    for r in rows
-                    if str(r.get("dish_name", "")).strip()
-                ))
+                # Tổng hợp các món đã đặt và tổng số phần của từng món
+                dish_quantities = defaultdict(int)
+                for r in rows:
+                    dish_name = str(r.get("dish_name", "")).strip()
+                    if dish_name:
+                        try:
+                            qty = int(r.get("quantity", 1) or 1)
+                        except (TypeError, ValueError):
+                            qty = 1
+                        dish_quantities[dish_name] += qty
 
-                if ordered_dishes:
-                    st.markdown(
-                        f"**🍽️ Món ăn đã được đặt:** {', '.join(ordered_dishes)}"
-                    )
+                ordered_dishes_text = ", ".join(
+                    f"{dish} ({qty} phần)" if qty > 1 else dish
+                    for dish, qty in dish_quantities.items()
+                )
 
-                    # Thông báo lấy cơm khi trong ngày có ít nhất một đơn đã giao
+                if ordered_dishes_text:
+                    st.markdown(f"🍽️ **Món ăn đã được đặt:** {ordered_dishes_text}")
+
                     has_delivered = any(
                         str(r.get("status", "")).strip().lower() == "đã giao"
                         for r in rows
