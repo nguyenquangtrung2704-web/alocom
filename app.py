@@ -989,6 +989,116 @@ div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
         top: 128px !important;
     }
 }
+
+
+/* ===== V36 - TƯƠNG THÍCH LIGHT / DARK MODE =====
+   Dùng biến màu gốc của Streamlit thay vì khóa cứng nền trắng/chữ tối.
+   Nhờ vậy khi người dùng chọn System / Light / Dark, toàn bộ giao diện
+   vẫn giữ độ tương phản và không bị chữ trắng trên nền trắng. */
+
+/* Nền và màu chữ tổng thể */
+.stApp {
+    background: var(--background-color, #ffffff) !important;
+    color: var(--text-color, #262730) !important;
+}
+
+/* Header/banner và thanh tab luôn ăn theo theme */
+.sticky-app-header,
+.sticky-app-header.banner-image-header,
+div[data-testid="stTabs"] > div[data-baseweb="tab-list"],
+div[data-baseweb="tab-list"] {
+    background: var(--background-color, #ffffff) !important;
+    border-color: color-mix(in srgb, var(--text-color, #262730) 16%, transparent) !important;
+}
+
+/* Tab chưa chọn */
+button[data-baseweb="tab"] {
+    background: var(--secondary-background-color, #f0f2f6) !important;
+    border-color: color-mix(in srgb, var(--text-color, #262730) 18%, transparent) !important;
+    box-shadow: none !important;
+}
+button[data-baseweb="tab"] p {
+    color: var(--text-color, #262730) !important;
+}
+button[data-baseweb="tab"]:hover {
+    background: color-mix(in srgb, var(--secondary-background-color, #f0f2f6) 82%, var(--primary-color, #ff4b4b) 18%) !important;
+}
+
+/* Tab đang chọn: giữ màu nhận diện đỏ/cam nhưng bảo đảm chữ dễ đọc */
+button[data-baseweb="tab"][aria-selected="true"] {
+    background: color-mix(in srgb, var(--background-color, #ffffff) 86%, var(--primary-color, #ff4b4b) 14%) !important;
+    border-color: var(--primary-color, #ff4b4b) !important;
+}
+button[data-baseweb="tab"][aria-selected="true"] p {
+    color: var(--primary-color, #ff4b4b) !important;
+}
+
+/* Các khối HTML tự tạo */
+.food-card,
+.order-card,
+.summary-card,
+.member-card,
+.menu-card {
+    background: var(--secondary-background-color, #f0f2f6) !important;
+    border-color: color-mix(in srgb, var(--text-color, #262730) 16%, transparent) !important;
+    color: var(--text-color, #262730) !important;
+}
+
+/* Chữ custom phải đổi theo theme */
+.food-section-title,
+.food-card-name,
+.order-card-title,
+.sticky-app-header .app-title,
+.stApp h1,
+.stApp h2,
+.stApp h3,
+.stApp h4,
+.stApp h5,
+.stApp h6 {
+    color: var(--text-color, #262730) !important;
+}
+.food-card-price {
+    color: #16a34a !important;
+}
+.order-meta,
+.sticky-app-header .app-subtitle {
+    color: color-mix(in srgb, var(--text-color, #262730) 68%, transparent) !important;
+}
+
+/* Label, caption, markdown và helper text của Streamlit */
+.stApp label,
+.stApp [data-testid="stMarkdownContainer"] p,
+.stApp [data-testid="stCaptionContainer"],
+.stApp [data-testid="stWidgetLabel"] p {
+    color: var(--text-color, #262730);
+}
+
+/* Input/select/number/date để Streamlit tự theo theme; chỉ làm rõ viền */
+.stApp input,
+.stApp textarea,
+.stApp [data-baseweb="select"] > div,
+.stApp [data-baseweb="input"] > div {
+    border-color: color-mix(in srgb, var(--text-color, #262730) 20%, transparent) !important;
+}
+
+/* Divider */
+.stApp hr {
+    border-color: color-mix(in srgb, var(--text-color, #262730) 16%, transparent) !important;
+}
+
+/* Fallback cho trình duyệt không hỗ trợ color-mix */
+@supports not (color: color-mix(in srgb, black 50%, white)) {
+    .sticky-app-header,
+    .sticky-app-header.banner-image-header,
+    div[data-testid="stTabs"] > div[data-baseweb="tab-list"],
+    div[data-baseweb="tab-list"] {
+        border-color: rgba(128,128,128,.28) !important;
+    }
+    button[data-baseweb="tab"] {
+        border-color: rgba(128,128,128,.28) !important;
+    }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -2206,18 +2316,12 @@ if is_admin:
         st.success("Đang đăng nhập với quyền quản trị.")
 
         st.markdown("### ➕ Thêm món mới")
-
-        # Mỗi lần thêm món thành công, đổi key của các widget để form tự xóa sạch.
-        if "menu_add_form_reset" not in st.session_state:
-            st.session_state["menu_add_form_reset"] = 0
-        menu_add_reset = st.session_state["menu_add_form_reset"]
-
         c1, c2, c3 = st.columns([2.2, 1.2, 2.6])
 
         with c1:
             new_dish_name = st.text_input(
                 "Tên món mới",
-                key=f"new_dish_name_{menu_add_reset}"
+                key="new_dish_name"
             )
 
         with c2:
@@ -2226,14 +2330,14 @@ if is_admin:
                 min_value=1000,
                 value=30000,
                 step=1000,
-                key=f"new_price_{menu_add_reset}"
+                key="new_price"
             )
 
         with c3:
             new_image_file = st.file_uploader(
                 "Hình ảnh món ăn",
                 type=["jpg", "jpeg", "png", "webp"],
-                key=f"new_menu_image_{menu_add_reset}"
+                key="new_menu_image"
             )
             if new_image_file is not None:
                 st.image(
@@ -2256,9 +2360,7 @@ if is_admin:
                         int(new_price),
                         new_image_url
                     )
-                    # Tăng bộ đếm để lần chạy lại tạo bộ ô nhập mới,
-                    # nhờ đó Tên món + Giá + Hình ảnh trở về trạng thái ban đầu.
-                    st.session_state["menu_add_form_reset"] += 1
+                    st.success("Đã thêm món mới.")
                     st.rerun()
                 except Exception as e:
                     st.error("Không thêm được món hoặc không tải được ảnh.")
