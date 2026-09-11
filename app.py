@@ -989,66 +989,116 @@ div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
         top: 128px !important;
     }
 }
-</style>
-""", unsafe_allow_html=True)
 
 
-# ============================================================
-# V36 - KHÓA CỨNG BANNER + THANH MENU KHI CUỘN TRANG
-# ============================================================
-st.markdown("""
-<style>
-/* Khóa banner ở trên cùng */
-.sticky-app-header.banner-image-header {
-    position: sticky !important;
-    top: 0 !important;
-    z-index: 9999 !important;
-    background: #ffffff !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    border: none !important;
+/* ===== V36 - TƯƠNG THÍCH LIGHT / DARK MODE =====
+   Dùng biến màu gốc của Streamlit thay vì khóa cứng nền trắng/chữ tối.
+   Nhờ vậy khi người dùng chọn System / Light / Dark, toàn bộ giao diện
+   vẫn giữ độ tương phản và không bị chữ trắng trên nền trắng. */
+
+/* Nền và màu chữ tổng thể */
+.stApp {
+    background: var(--background-color, #ffffff) !important;
+    color: var(--text-color, #262730) !important;
+}
+
+/* Header/banner và thanh tab luôn ăn theo theme */
+.sticky-app-header,
+.sticky-app-header.banner-image-header,
+div[data-testid="stTabs"] > div[data-baseweb="tab-list"],
+div[data-baseweb="tab-list"] {
+    background: var(--background-color, #ffffff) !important;
+    border-color: color-mix(in srgb, var(--text-color, #262730) 16%, transparent) !important;
+}
+
+/* Tab chưa chọn */
+button[data-baseweb="tab"] {
+    background: var(--secondary-background-color, #f0f2f6) !important;
+    border-color: color-mix(in srgb, var(--text-color, #262730) 18%, transparent) !important;
     box-shadow: none !important;
 }
-
-/* Giữ kích thước banner ổn định */
-.main-banner-image {
-    display: block !important;
-    width: 100% !important;
-    height: auto !important;
-    max-height: 165px !important;
-    object-fit: cover !important;
-    object-position: center !important;
-    border-radius: 0 !important;
+button[data-baseweb="tab"] p {
+    color: var(--text-color, #262730) !important;
+}
+button[data-baseweb="tab"]:hover {
+    background: color-mix(in srgb, var(--secondary-background-color, #f0f2f6) 82%, var(--primary-color, #ff4b4b) 18%) !important;
 }
 
-/* Khóa thanh tab ngay dưới banner */
-div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
-    position: sticky !important;
-    top: 165px !important;
-    z-index: 9998 !important;
-    background: #ffffff !important;
-    border-bottom: 1px solid #dddddd !important;
-    padding-top: 6px !important;
-    padding-bottom: 6px !important;
-    box-shadow: 0 2px 8px rgba(0,0,0,.04) !important;
+/* Tab đang chọn: giữ màu nhận diện đỏ/cam nhưng bảo đảm chữ dễ đọc */
+button[data-baseweb="tab"][aria-selected="true"] {
+    background: color-mix(in srgb, var(--background-color, #ffffff) 86%, var(--primary-color, #ff4b4b) 14%) !important;
+    border-color: var(--primary-color, #ff4b4b) !important;
+}
+button[data-baseweb="tab"][aria-selected="true"] p {
+    color: var(--primary-color, #ff4b4b) !important;
 }
 
-/* Cho sticky hoạt động xuyên suốt vùng tabs */
-div[data-testid="stTabs"] {
-    overflow: visible !important;
+/* Các khối HTML tự tạo */
+.food-card,
+.order-card,
+.summary-card,
+.member-card,
+.menu-card {
+    background: var(--secondary-background-color, #f0f2f6) !important;
+    border-color: color-mix(in srgb, var(--text-color, #262730) 16%, transparent) !important;
+    color: var(--text-color, #262730) !important;
 }
 
-@media (max-width: 900px) {
-    .main-banner-image {
-        max-height: 118px !important;
+/* Chữ custom phải đổi theo theme */
+.food-section-title,
+.food-card-name,
+.order-card-title,
+.sticky-app-header .app-title,
+.stApp h1,
+.stApp h2,
+.stApp h3,
+.stApp h4,
+.stApp h5,
+.stApp h6 {
+    color: var(--text-color, #262730) !important;
+}
+.food-card-price {
+    color: #16a34a !important;
+}
+.order-meta,
+.sticky-app-header .app-subtitle {
+    color: color-mix(in srgb, var(--text-color, #262730) 68%, transparent) !important;
+}
+
+/* Label, caption, markdown và helper text của Streamlit */
+.stApp label,
+.stApp [data-testid="stMarkdownContainer"] p,
+.stApp [data-testid="stCaptionContainer"],
+.stApp [data-testid="stWidgetLabel"] p {
+    color: var(--text-color, #262730);
+}
+
+/* Input/select/number/date để Streamlit tự theo theme; chỉ làm rõ viền */
+.stApp input,
+.stApp textarea,
+.stApp [data-baseweb="select"] > div,
+.stApp [data-baseweb="input"] > div {
+    border-color: color-mix(in srgb, var(--text-color, #262730) 20%, transparent) !important;
+}
+
+/* Divider */
+.stApp hr {
+    border-color: color-mix(in srgb, var(--text-color, #262730) 16%, transparent) !important;
+}
+
+/* Fallback cho trình duyệt không hỗ trợ color-mix */
+@supports not (color: color-mix(in srgb, black 50%, white)) {
+    .sticky-app-header,
+    .sticky-app-header.banner-image-header,
+    div[data-testid="stTabs"] > div[data-baseweb="tab-list"],
+    div[data-baseweb="tab-list"] {
+        border-color: rgba(128,128,128,.28) !important;
     }
-
-    div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
-        top: 118px !important;
-        overflow-x: auto !important;
-        flex-wrap: nowrap !important;
+    button[data-baseweb="tab"] {
+        border-color: rgba(128,128,128,.28) !important;
     }
 }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -1192,6 +1242,60 @@ def delete_member(member_id):
         .eq("id", member_id)
         .execute()
     )
+
+# ============================================================
+# THANH TOÁN / XÁC NHẬN CHUYỂN KHOẢN THEO THÁNG
+# ============================================================
+def load_monthly_payments(year, month):
+    """Trả về dict {member_id: payment_row} của một tháng."""
+    if supabase is None:
+        return {}
+
+    result = (
+        supabase.table("monthly_payments")
+        .select("*")
+        .eq("payment_year", int(year))
+        .eq("payment_month", int(month))
+        .execute()
+    )
+    return {int(r["member_id"]): r for r in (result.data or [])}
+
+
+def save_monthly_payment(member_id, member_name, year, month, amount_due, paid):
+    """Tạo hoặc cập nhật trạng thái đã nhận chuyển khoản của một thành viên."""
+    existing = (
+        supabase.table("monthly_payments")
+        .select("id")
+        .eq("member_id", int(member_id))
+        .eq("payment_year", int(year))
+        .eq("payment_month", int(month))
+        .limit(1)
+        .execute()
+    )
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    payload = {
+        "member_id": int(member_id),
+        "member_name": member_name.strip(),
+        "payment_year": int(year),
+        "payment_month": int(month),
+        "amount_due": int(amount_due),
+        "paid": bool(paid),
+        "payment_method": "Chuyển khoản" if paid else None,
+        "received_at": now_iso if paid else None,
+        "updated_at": now_iso,
+    }
+
+    if existing.data:
+        return (
+            supabase.table("monthly_payments")
+            .update(payload)
+            .eq("id", existing.data[0]["id"])
+            .execute()
+        )
+
+    payload["created_at"] = now_iso
+    return supabase.table("monthly_payments").insert(payload).execute()
 
 # ============================================================
 # HỘP THOẠI THÔNG BÁO ĐẶT CƠM THÀNH CÔNG
@@ -2256,6 +2360,61 @@ with tab3:
             else:
                 st.caption("Chưa có dữ liệu.")
 
+        # ---------------- TÌNH TRẠNG THANH TOÁN THEO THÁNG ----------------
+        if mode == "Theo tháng":
+            st.markdown("### 💳 Tình trạng chuyển khoản")
+            st.caption(
+                "Trạng thái do quản trị viên xác nhận sau khi thực tế nhận được tiền chuyển khoản."
+            )
+
+            try:
+                payment_map = load_monthly_payments(selected_year, selected_month)
+                dashboard_members = load_members(include_inactive=True) if supabase else []
+            except Exception as e:
+                payment_map = {}
+                dashboard_members = []
+                st.warning("Chưa đọc được dữ liệu xác nhận chuyển khoản.")
+                st.caption(str(e))
+
+            member_id_by_name = {
+                m["full_name"]: int(m["id"]) for m in dashboard_members
+            }
+
+            payment_rows = []
+            for member_name, info in sorted(
+                person_summary.items(),
+                key=lambda x: x[0].lower()
+            ):
+                member_id = member_id_by_name.get(member_name)
+                payment = payment_map.get(member_id, {}) if member_id is not None else {}
+                is_paid = bool(payment.get("paid", False))
+                received_at = payment.get("received_at")
+
+                received_text = "—"
+                if received_at:
+                    try:
+                        received_text = datetime.fromisoformat(
+                            received_at.replace("Z", "+00:00")
+                        ).astimezone(timezone(timedelta(hours=7))).strftime("%d/%m/%Y %H:%M")
+                    except Exception:
+                        received_text = str(received_at)
+
+                payment_rows.append({
+                    "Họ tên": member_name,
+                    "Số tiền tháng": money(info["total"]),
+                    "Trạng thái": "✅ Đã nhận chuyển khoản" if is_paid else "⏳ Chưa xác nhận",
+                    "Ngày xác nhận": received_text,
+                })
+
+            if payment_rows:
+                st.dataframe(
+                    payment_rows,
+                    use_container_width=True,
+                    hide_index=True
+                )
+            else:
+                st.caption("Tháng này chưa phát sinh tiền cơm để đối chiếu.")
+
 # ============================================================
 # TAB 4 - QUẢN TRỊ THỰC ĐƠN
 # Chỉ được tạo/hiển thị khi đã đăng nhập quản trị.
@@ -2266,18 +2425,12 @@ if is_admin:
         st.success("Đang đăng nhập với quyền quản trị.")
 
         st.markdown("### ➕ Thêm món mới")
-
-        # Mỗi lần thêm món thành công, đổi key của các widget để form tự xóa sạch.
-        if "menu_add_form_reset" not in st.session_state:
-            st.session_state["menu_add_form_reset"] = 0
-        menu_add_reset = st.session_state["menu_add_form_reset"]
-
         c1, c2, c3 = st.columns([2.2, 1.2, 2.6])
 
         with c1:
             new_dish_name = st.text_input(
                 "Tên món mới",
-                key=f"new_dish_name_{menu_add_reset}"
+                key="new_dish_name"
             )
 
         with c2:
@@ -2286,14 +2439,14 @@ if is_admin:
                 min_value=1000,
                 value=30000,
                 step=1000,
-                key=f"new_price_{menu_add_reset}"
+                key="new_price"
             )
 
         with c3:
             new_image_file = st.file_uploader(
                 "Hình ảnh món ăn",
                 type=["jpg", "jpeg", "png", "webp"],
-                key=f"new_menu_image_{menu_add_reset}"
+                key="new_menu_image"
             )
             if new_image_file is not None:
                 st.image(
@@ -2316,9 +2469,7 @@ if is_admin:
                         int(new_price),
                         new_image_url
                     )
-                    # Tăng bộ đếm để lần chạy lại tạo bộ ô nhập mới,
-                    # nhờ đó Tên món + Giá + Hình ảnh trở về trạng thái ban đầu.
-                    st.session_state["menu_add_form_reset"] += 1
+                    st.success("Đã thêm món mới.")
                     st.rerun()
                 except Exception as e:
                     st.error("Không thêm được món hoặc không tải được ảnh.")
@@ -2481,6 +2632,108 @@ if is_admin:
         st.subheader("👥 Quản trị thành viên")
         st.success("Đang đăng nhập với quyền quản trị.")
 
+        # ========================================================
+        # XÁC NHẬN ĐÃ NHẬN CHUYỂN KHOẢN THEO THÁNG
+        # ========================================================
+        st.markdown("### 💳 Xác nhận đã nhận chuyển khoản")
+        st.caption(
+            "Chọn tháng, sau đó tích Đã nhận chuyển khoản cho đúng thành viên. "
+            "Trạng thái này sẽ hiện ở Dashboard Tổng hợp để thành viên tự kiểm tra."
+        )
+
+        pay_today = date.today()
+        pay_f1, pay_f2 = st.columns(2)
+        with pay_f1:
+            pay_month = st.selectbox(
+                "Tháng đối chiếu",
+                list(range(1, 13)),
+                index=pay_today.month - 1,
+                format_func=lambda x: f"Tháng {x}",
+                key="admin_payment_month"
+            )
+        with pay_f2:
+            pay_year_options = list(range(pay_today.year - 2, pay_today.year + 2))
+            pay_year = st.selectbox(
+                "Năm đối chiếu",
+                pay_year_options,
+                index=pay_year_options.index(pay_today.year),
+                key="admin_payment_year"
+            )
+
+        try:
+            pay_orders = load_orders_by_month(int(pay_year), int(pay_month))
+            pay_members = load_members(include_inactive=True)
+            pay_map = load_monthly_payments(int(pay_year), int(pay_month))
+        except Exception as e:
+            pay_orders, pay_members, pay_map = [], [], {}
+            st.error("Không đọc được dữ liệu thanh toán tháng.")
+            st.caption(str(e))
+
+        amount_by_name = defaultdict(int)
+        for r in pay_orders:
+            amount_by_name[r["customer_name"]] += int(r["quantity"]) * int(r["unit_price"])
+
+        members_with_orders = [m for m in pay_members if amount_by_name.get(m["full_name"], 0) > 0]
+
+        if not members_with_orders:
+            st.info("Tháng này chưa có thành viên nào phát sinh tiền cơm.")
+        else:
+            for member in members_with_orders:
+                member_id = int(member["id"])
+                member_name = member["full_name"]
+                amount_due = amount_by_name.get(member_name, 0)
+                current_payment = pay_map.get(member_id, {})
+                current_paid = bool(current_payment.get("paid", False))
+
+                with st.container(border=True):
+                    pc1, pc2, pc3 = st.columns([3.4, 2, 2.6])
+
+                    with pc1:
+                        st.markdown(f"**{member_name}**")
+                        st.caption(f"Tổng tiền tháng {pay_month}/{pay_year}: {money(amount_due)}")
+
+                    with pc2:
+                        paid_checked = st.checkbox(
+                            "Đã nhận chuyển khoản",
+                            value=current_paid,
+                            key=f"payment_paid_{pay_year}_{pay_month}_{member_id}"
+                        )
+                        if current_paid and current_payment.get("received_at"):
+                            try:
+                                paid_dt = datetime.fromisoformat(
+                                    current_payment["received_at"].replace("Z", "+00:00")
+                                ).astimezone(timezone(timedelta(hours=7)))
+                                st.caption(f"Đã xác nhận: {paid_dt.strftime('%d/%m/%Y %H:%M')}")
+                            except Exception:
+                                pass
+
+                    with pc3:
+                        st.write("")
+                        if st.button(
+                            "💾 Lưu xác nhận",
+                            type="primary" if paid_checked else "secondary",
+                            use_container_width=True,
+                            key=f"save_payment_{pay_year}_{pay_month}_{member_id}"
+                        ):
+                            try:
+                                save_monthly_payment(
+                                    member_id,
+                                    member_name,
+                                    int(pay_year),
+                                    int(pay_month),
+                                    amount_due,
+                                    paid_checked
+                                )
+                                st.success(
+                                    "Đã ghi nhận chuyển khoản." if paid_checked
+                                    else "Đã chuyển về trạng thái chưa xác nhận."
+                                )
+                                st.rerun()
+                            except Exception as e:
+                                st.error("Không lưu được trạng thái chuyển khoản.")
+                                st.caption(str(e))
+
+        st.divider()
         st.markdown("### ➕ Thêm thành viên mới")
 
         new_member_name = st.text_input(
@@ -2554,9 +2807,4 @@ if is_admin:
 
 
 st.divider()
-st.markdown("""
-<div style="color:#8a8f98; font-size:0.9rem; margin-top:1rem; line-height:1.7;">
-    Đặt Cơm Online • Python + Streamlit + Supabase<br>
-    @Copyright: Tờ Rung
-</div>
-""", unsafe_allow_html=True)
+st.caption("Đặt Cơm Online • Python + Streamlit + Supabase")
