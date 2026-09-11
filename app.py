@@ -2923,4 +2923,4 @@ if is_admin:
 
 
 st.divider()
-st.caption("Đặt Cơm Online • Python + Streamlit + Supabase")
+st.caption("Copyright by Tờ Rung")
