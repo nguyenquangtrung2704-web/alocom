@@ -2206,12 +2206,18 @@ if is_admin:
         st.success("Đang đăng nhập với quyền quản trị.")
 
         st.markdown("### ➕ Thêm món mới")
+
+        # Mỗi lần thêm món thành công, đổi key của các widget để form tự xóa sạch.
+        if "menu_add_form_reset" not in st.session_state:
+            st.session_state["menu_add_form_reset"] = 0
+        menu_add_reset = st.session_state["menu_add_form_reset"]
+
         c1, c2, c3 = st.columns([2.2, 1.2, 2.6])
 
         with c1:
             new_dish_name = st.text_input(
                 "Tên món mới",
-                key="new_dish_name"
+                key=f"new_dish_name_{menu_add_reset}"
             )
 
         with c2:
@@ -2220,14 +2226,14 @@ if is_admin:
                 min_value=1000,
                 value=30000,
                 step=1000,
-                key="new_price"
+                key=f"new_price_{menu_add_reset}"
             )
 
         with c3:
             new_image_file = st.file_uploader(
                 "Hình ảnh món ăn",
                 type=["jpg", "jpeg", "png", "webp"],
-                key="new_menu_image"
+                key=f"new_menu_image_{menu_add_reset}"
             )
             if new_image_file is not None:
                 st.image(
@@ -2250,7 +2256,9 @@ if is_admin:
                         int(new_price),
                         new_image_url
                     )
-                    st.success("Đã thêm món mới.")
+                    # Tăng bộ đếm để lần chạy lại tạo bộ ô nhập mới,
+                    # nhờ đó Tên món + Giá + Hình ảnh trở về trạng thái ban đầu.
+                    st.session_state["menu_add_form_reset"] += 1
                     st.rerun()
                 except Exception as e:
                     st.error("Không thêm được món hoặc không tải được ảnh.")
