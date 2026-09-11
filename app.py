@@ -992,6 +992,66 @@ div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
 </style>
 """, unsafe_allow_html=True)
 
+
+# ============================================================
+# V36 - KHÓA CỨNG BANNER + THANH MENU KHI CUỘN TRANG
+# ============================================================
+st.markdown("""
+<style>
+/* Khóa banner ở trên cùng */
+.sticky-app-header.banner-image-header {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 9999 !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* Giữ kích thước banner ổn định */
+.main-banner-image {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: 165px !important;
+    object-fit: cover !important;
+    object-position: center !important;
+    border-radius: 0 !important;
+}
+
+/* Khóa thanh tab ngay dưới banner */
+div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
+    position: sticky !important;
+    top: 165px !important;
+    z-index: 9998 !important;
+    background: #ffffff !important;
+    border-bottom: 1px solid #dddddd !important;
+    padding-top: 6px !important;
+    padding-bottom: 6px !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,.04) !important;
+}
+
+/* Cho sticky hoạt động xuyên suốt vùng tabs */
+div[data-testid="stTabs"] {
+    overflow: visible !important;
+}
+
+@media (max-width: 900px) {
+    .main-banner-image {
+        max-height: 118px !important;
+    }
+
+    div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
+        top: 118px !important;
+        overflow-x: auto !important;
+        flex-wrap: nowrap !important;
+    }
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ============================================================
 # KẾT NỐI SUPABASE
 # ============================================================
@@ -2496,6 +2556,7 @@ if is_admin:
 st.divider()
 st.markdown("""
 <div style="color:#8a8f98; font-size:0.9rem; margin-top:1rem; line-height:1.7;">
+    Đặt Cơm Online • Python + Streamlit + Supabase<br>
     @Copyright: Tờ Rung
 </div>
 """, unsafe_allow_html=True)
