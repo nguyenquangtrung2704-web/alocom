@@ -1262,10 +1262,14 @@ def load_monthly_payments(year, month):
 
 
 def save_monthly_payment(member_id, member_name, year, month, amount_due, paid):
-    """Tạo hoặc cập nhật trạng thái đã nhận chuyển khoản của một thành viên."""
+    """Lưu trạng thái thanh toán theo tháng.
+
+    - Chưa thanh toán: paid = False, received_at = NULL
+    - Đã thanh toán: paid = True, received_at tự lấy thời điểm hệ thống hiện hành
+    """
     existing = (
         supabase.table("monthly_payments")
-        .select("id")
+        .select("id,paid,received_at")
         .eq("member_id", int(member_id))
         .eq("payment_year", int(year))
         .eq("payment_month", int(month))
@@ -1274,6 +1278,17 @@ def save_monthly_payment(member_id, member_name, year, month, amount_due, paid):
     )
 
     now_iso = datetime.now(timezone.utc).isoformat()
+
+    # Nếu đang chuyển từ chưa thanh toán -> đã thanh toán,
+    # tự động lấy ngày giờ hệ thống hiện hành.
+    # Nếu đã thanh toán từ trước thì giữ nguyên ngày xác nhận cũ.
+    received_at = None
+    if paid:
+        if existing.data and existing.data[0].get("paid") and existing.data[0].get("received_at"):
+            received_at = existing.data[0]["received_at"]
+        else:
+            received_at = now_iso
+
     payload = {
         "member_id": int(member_id),
         "member_name": member_name.strip(),
@@ -1282,7 +1297,7 @@ def save_monthly_payment(member_id, member_name, year, month, amount_due, paid):
         "amount_due": int(amount_due),
         "paid": bool(paid),
         "payment_method": "Chuyển khoản" if paid else None,
-        "received_at": now_iso if paid else None,
+        "received_at": received_at,
         "updated_at": now_iso,
     }
 
@@ -2364,7 +2379,8 @@ with tab3:
         if mode == "Theo tháng":
             st.markdown("### 💳 Tình trạng chuyển khoản")
             st.caption(
-                "Trạng thái do quản trị viên xác nhận sau khi thực tế nhận được tiền chuyển khoản."
+                "Quản trị viên xác nhận sau khi thực tế nhận được tiền chuyển khoản. "
+                "Khi chuyển sang Đã thanh toán và bấm Cập nhật, ngày xác nhận sẽ tự động lấy ngày hiện hành của hệ thống."
             )
 
             try:
@@ -2381,6 +2397,8 @@ with tab3:
             }
 
             payment_rows = []
+            payment_meta = {}
+
             for member_name, info in sorted(
                 person_summary.items(),
                 key=lambda x: x[0].lower()
@@ -2395,23 +2413,114 @@ with tab3:
                     try:
                         received_text = datetime.fromisoformat(
                             received_at.replace("Z", "+00:00")
-                        ).astimezone(timezone(timedelta(hours=7))).strftime("%d/%m/%Y %H:%M")
+                        ).astimezone(
+                            timezone(timedelta(hours=7))
+                        ).strftime("%d/%m/%Y")
                     except Exception:
                         received_text = str(received_at)
+
+                status_text = "Đã thanh toán" if is_paid else "Chưa thanh toán"
 
                 payment_rows.append({
                     "Họ tên": member_name,
                     "Số tiền tháng": money(info["total"]),
-                    "Trạng thái": "✅ Đã nhận chuyển khoản" if is_paid else "⏳ Chưa xác nhận",
+                    "Trạng thái": status_text,
                     "Ngày xác nhận": received_text,
                 })
 
+                payment_meta[member_name] = {
+                    "member_id": member_id,
+                    "amount_due": int(info["total"]),
+                    "old_paid": is_paid,
+                }
+
             if payment_rows:
-                st.dataframe(
-                    payment_rows,
-                    use_container_width=True,
-                    hide_index=True
-                )
+                payment_df = pd.DataFrame(payment_rows)
+
+                if is_admin:
+                    edited_payment_df = st.data_editor(
+                        payment_df,
+                        use_container_width=True,
+                        hide_index=True,
+                        disabled=["Họ tên", "Số tiền tháng", "Ngày xác nhận"],
+                        column_config={
+                            "Trạng thái": st.column_config.SelectboxColumn(
+                                "Trạng thái",
+                                options=["Chưa thanh toán", "Đã thanh toán"],
+                                required=True,
+                            ),
+                            "Ngày xác nhận": st.column_config.TextColumn(
+                                "Ngày xác nhận",
+                                help="Tự động cập nhật theo ngày hệ thống khi bấm Cập nhật."
+                            ),
+                        },
+                        key=f"payment_editor_{selected_year}_{selected_month}",
+                    )
+
+                    st.caption(
+                        "💡 Sau khi đổi trạng thái, bấm nút Cập nhật bên dưới để lưu. "
+                        "Ngày xác nhận chỉ được ghi khi trạng thái là Đã thanh toán."
+                    )
+
+                    if st.button(
+                        "🔄 Cập nhật",
+                        type="primary",
+                        use_container_width=True,
+                        key=f"update_payment_status_{selected_year}_{selected_month}",
+                    ):
+                        try:
+                            changed_count = 0
+
+                            for _, edited_row in edited_payment_df.iterrows():
+                                member_name = edited_row["Họ tên"]
+                                meta = payment_meta.get(member_name)
+
+                                if not meta or meta["member_id"] is None:
+                                    continue
+
+                                new_paid = edited_row["Trạng thái"] == "Đã thanh toán"
+
+                                # Chỉ ghi khi trạng thái có thay đổi, hoặc chưa có bản ghi.
+                                existing_payment = payment_map.get(meta["member_id"])
+                                if (
+                                    existing_payment is None
+                                    or bool(existing_payment.get("paid", False)) != new_paid
+                                    or int(existing_payment.get("amount_due", 0) or 0) != meta["amount_due"]
+                                ):
+                                    save_monthly_payment(
+                                        meta["member_id"],
+                                        member_name,
+                                        int(selected_year),
+                                        int(selected_month),
+                                        meta["amount_due"],
+                                        new_paid,
+                                    )
+                                    changed_count += 1
+
+                            if changed_count:
+                                st.success(
+                                    f"Đã cập nhật {changed_count} thành viên. "
+                                    "Ngày xác nhận đã tự lấy theo ngày hệ thống."
+                                )
+                            else:
+                                st.info("Không có thay đổi nào cần cập nhật.")
+
+                            st.rerun()
+
+                        except Exception as e:
+                            st.error("Không cập nhật được tình trạng thanh toán.")
+                            st.caption(str(e))
+
+                else:
+                    st.dataframe(
+                        payment_df,
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                    st.caption(
+                        "Trạng thái thanh toán do quản trị viên xác nhận. "
+                        "Thành viên chỉ xem, không thể chỉnh sửa."
+                    )
             else:
                 st.caption("Tháng này chưa phát sinh tiền cơm để đối chiếu.")
 
@@ -2631,107 +2740,6 @@ if is_admin:
     with tab5:
         st.subheader("👥 Quản trị thành viên")
         st.success("Đang đăng nhập với quyền quản trị.")
-
-        # ========================================================
-        # XÁC NHẬN ĐÃ NHẬN CHUYỂN KHOẢN THEO THÁNG
-        # ========================================================
-        st.markdown("### 💳 Xác nhận đã nhận chuyển khoản")
-        st.caption(
-            "Chọn tháng, sau đó tích Đã nhận chuyển khoản cho đúng thành viên. "
-            "Trạng thái này sẽ hiện ở Dashboard Tổng hợp để thành viên tự kiểm tra."
-        )
-
-        pay_today = date.today()
-        pay_f1, pay_f2 = st.columns(2)
-        with pay_f1:
-            pay_month = st.selectbox(
-                "Tháng đối chiếu",
-                list(range(1, 13)),
-                index=pay_today.month - 1,
-                format_func=lambda x: f"Tháng {x}",
-                key="admin_payment_month"
-            )
-        with pay_f2:
-            pay_year_options = list(range(pay_today.year - 2, pay_today.year + 2))
-            pay_year = st.selectbox(
-                "Năm đối chiếu",
-                pay_year_options,
-                index=pay_year_options.index(pay_today.year),
-                key="admin_payment_year"
-            )
-
-        try:
-            pay_orders = load_orders_by_month(int(pay_year), int(pay_month))
-            pay_members = load_members(include_inactive=True)
-            pay_map = load_monthly_payments(int(pay_year), int(pay_month))
-        except Exception as e:
-            pay_orders, pay_members, pay_map = [], [], {}
-            st.error("Không đọc được dữ liệu thanh toán tháng.")
-            st.caption(str(e))
-
-        amount_by_name = defaultdict(int)
-        for r in pay_orders:
-            amount_by_name[r["customer_name"]] += int(r["quantity"]) * int(r["unit_price"])
-
-        members_with_orders = [m for m in pay_members if amount_by_name.get(m["full_name"], 0) > 0]
-
-        if not members_with_orders:
-            st.info("Tháng này chưa có thành viên nào phát sinh tiền cơm.")
-        else:
-            for member in members_with_orders:
-                member_id = int(member["id"])
-                member_name = member["full_name"]
-                amount_due = amount_by_name.get(member_name, 0)
-                current_payment = pay_map.get(member_id, {})
-                current_paid = bool(current_payment.get("paid", False))
-
-                with st.container(border=True):
-                    pc1, pc2, pc3 = st.columns([3.4, 2, 2.6])
-
-                    with pc1:
-                        st.markdown(f"**{member_name}**")
-                        st.caption(f"Tổng tiền tháng {pay_month}/{pay_year}: {money(amount_due)}")
-
-                    with pc2:
-                        paid_checked = st.checkbox(
-                            "Đã nhận chuyển khoản",
-                            value=current_paid,
-                            key=f"payment_paid_{pay_year}_{pay_month}_{member_id}"
-                        )
-                        if current_paid and current_payment.get("received_at"):
-                            try:
-                                paid_dt = datetime.fromisoformat(
-                                    current_payment["received_at"].replace("Z", "+00:00")
-                                ).astimezone(timezone(timedelta(hours=7)))
-                                st.caption(f"Đã xác nhận: {paid_dt.strftime('%d/%m/%Y %H:%M')}")
-                            except Exception:
-                                pass
-
-                    with pc3:
-                        st.write("")
-                        if st.button(
-                            "💾 Lưu xác nhận",
-                            type="primary" if paid_checked else "secondary",
-                            use_container_width=True,
-                            key=f"save_payment_{pay_year}_{pay_month}_{member_id}"
-                        ):
-                            try:
-                                save_monthly_payment(
-                                    member_id,
-                                    member_name,
-                                    int(pay_year),
-                                    int(pay_month),
-                                    amount_due,
-                                    paid_checked
-                                )
-                                st.success(
-                                    "Đã ghi nhận chuyển khoản." if paid_checked
-                                    else "Đã chuyển về trạng thái chưa xác nhận."
-                                )
-                                st.rerun()
-                            except Exception as e:
-                                st.error("Không lưu được trạng thái chuyển khoản.")
-                                st.caption(str(e))
 
         st.divider()
         st.markdown("### ➕ Thêm thành viên mới")
