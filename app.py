@@ -1864,6 +1864,19 @@ with tab2:
             if not rows:
                 st.info("Ngày này chưa có đơn nào.")
             else:
+                # Hiển thị nhanh các món đã được đặt trong ngày đang chọn.
+                # Dùng dict.fromkeys để loại món trùng nhưng vẫn giữ thứ tự xuất hiện.
+                ordered_dishes = list(dict.fromkeys(
+                    str(r.get("dish_name", "")).strip()
+                    for r in rows
+                    if str(r.get("dish_name", "")).strip()
+                ))
+
+                if ordered_dishes:
+                    st.markdown(
+                        f"**🍽️ Món ăn đã được đặt:** {', '.join(ordered_dishes)}"
+                    )
+
                 # Lấy thực đơn hiện tại để luôn dùng hình ảnh mới nhất của từng món.
                 try:
                     current_menu_items = load_menu(include_inactive=True)
