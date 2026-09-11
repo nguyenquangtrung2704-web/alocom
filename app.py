@@ -1890,7 +1890,30 @@ with tab2:
                         for r in rows
                     )
                     if has_delivered:
-                        st.success("🍱 Vui lòng đến Phòng Công nghệ thông tin để lấy cơm đã đặt.")
+                        st.markdown(
+                """
+                <div style="
+                    margin: 14px 0 18px 0;
+                    padding: 16px 20px;
+                    border: 3px solid #dc2626;
+                    border-radius: 14px;
+                    background: linear-gradient(135deg, #fff1f2 0%, #fee2e2 100%);
+                    box-shadow: 0 8px 24px rgba(220, 38, 38, 0.18);
+                    text-align: center;
+                ">
+                    <div style="
+                        color: #dc2626;
+                        font-size: 1.35rem;
+                        font-weight: 900;
+                        line-height: 1.45;
+                        letter-spacing: 0.01em;
+                    ">
+                        🍱 VUI LÒNG ĐẾN PHÒNG CÔNG NGHỆ THÔNG TIN ĐỂ LẤY CƠM ĐÃ ĐẶT
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
                 # Lấy thực đơn hiện tại để luôn dùng hình ảnh mới nhất của từng món.
                 try:
