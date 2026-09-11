@@ -1251,6 +1251,80 @@ div[data-testid="stMainBlockContainer"],
     }
 }
 
+
+/* ============================================================
+   V41 - CĂN BANNER + MENU KHỚP KHUNG GIAO DIỆN CHUNG
+   ============================================================ */
+
+/* Khung nội dung chung */
+:root {
+    --app-content-width: 1180px;
+}
+
+/* Banner: nhỏ lại và khớp đúng bề rộng content */
+div[data-testid="stElementContainer"]:has(.sticky-app-header.banner-image-header),
+div[data-testid="stMarkdownContainer"]:has(.sticky-app-header.banner-image-header) {
+    width: min(var(--app-content-width), calc(100vw - 4rem)) !important;
+}
+
+/* Ảnh banner không vượt ra ngoài khung */
+.sticky-app-header.banner-image-header {
+    width: 100% !important;
+    max-width: var(--app-content-width) !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+}
+
+.sticky-app-header.banner-image-header .main-banner-image {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 132px !important;
+    max-height: 132px !important;
+    object-fit: cover !important;
+    object-position: center !important;
+    border-radius: 16px !important;
+}
+
+/* Menu cũng khớp đúng bề rộng banner/content */
+div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
+    width: min(var(--app-content-width), calc(100vw - 4rem)) !important;
+}
+
+/* Điều chỉnh vị trí menu theo chiều cao banner mới */
+div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
+    top: calc(3.55rem + 140px) !important;
+}
+
+/* Chừa khoảng trống vừa đủ phía trên */
+div[data-testid="stMainBlockContainer"],
+.block-container {
+    padding-top: 235px !important;
+}
+
+/* Tablet / mobile */
+@media (max-width: 900px) {
+    div[data-testid="stElementContainer"]:has(.sticky-app-header.banner-image-header),
+    div[data-testid="stMarkdownContainer"]:has(.sticky-app-header.banner-image-header),
+    div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
+        width: calc(100vw - 1rem) !important;
+    }
+
+    .sticky-app-header.banner-image-header .main-banner-image {
+        height: 96px !important;
+        max-height: 96px !important;
+        border-radius: 12px !important;
+    }
+
+    div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
+        top: calc(3.55rem + 104px) !important;
+    }
+
+    div[data-testid="stMainBlockContainer"],
+    .block-container {
+        padding-top: 185px !important;
+    }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
