@@ -1099,6 +1099,84 @@ button[data-baseweb="tab"][aria-selected="true"] p {
     }
 }
 
+
+/* ============================================================
+   V38 - CỐ ĐỊNH BANNER + MENU KHI CUỘN TRANG
+   ============================================================ */
+
+div[data-testid="stAppViewContainer"],
+section.main,
+div[data-testid="stMain"],
+div.block-container,
+div[data-testid="stTabs"] {
+    overflow: visible !important;
+}
+
+/* Cố định wrapper chứa banner */
+div[data-testid="stMarkdownContainer"]:has(.sticky-app-header.banner-image-header),
+div[data-testid="stElementContainer"]:has(.sticky-app-header.banner-image-header) {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 9999 !important;
+    background: var(--background-color, #ffffff) !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* Bản thân banner */
+.sticky-app-header.banner-image-header {
+    position: relative !important;
+    top: auto !important;
+    z-index: auto !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 6px 0 4px 0 !important;
+    background: var(--background-color, #ffffff) !important;
+}
+
+.sticky-app-header.banner-image-header .main-banner-image {
+    display: block !important;
+    width: 100% !important;
+    height: 150px !important;
+    max-height: 150px !important;
+    object-fit: cover !important;
+    object-position: center !important;
+    border-radius: 18px !important;
+}
+
+/* Cố định menu ngay dưới banner */
+div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
+    position: sticky !important;
+    top: 160px !important;
+    z-index: 9998 !important;
+    width: 100% !important;
+    background: var(--background-color, #ffffff) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    border-bottom: 1px solid rgba(128,128,128,.22) !important;
+}
+
+/* Bóng nhẹ */
+div[data-testid="stMarkdownContainer"]:has(.sticky-app-header.banner-image-header),
+div[data-testid="stElementContainer"]:has(.sticky-app-header.banner-image-header),
+div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06) !important;
+}
+
+@media (max-width: 900px) {
+    .sticky-app-header.banner-image-header .main-banner-image {
+        height: 108px !important;
+        max-height: 108px !important;
+        border-radius: 14px !important;
+    }
+
+    div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
+        top: 116px !important;
+        overflow-x: auto !important;
+        flex-wrap: nowrap !important;
+    }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
