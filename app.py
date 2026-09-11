@@ -1891,7 +1891,7 @@ with tab2:
                     )
 
                     if has_delivered:
-                        notice_text = "🍱 VUI LÒNG ĐẾN PHÒNG CÔNG NGHỆ THÔNG TIN ĐỂ LẤY CƠM ĐÃ ĐẶT"
+                        notice_text = "🍱 CƠM ĐÃ CÓ, ĂN THÔI NÀO !!!"
                     else:
                         notice_text = "⏳ CƠM CHƯA CÓ, VUI LÒNG CHỜ ĐỢI !!!"
 
