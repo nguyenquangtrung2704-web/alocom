@@ -1099,6 +1099,131 @@ button[data-baseweb="tab"][aria-selected="true"] p {
     }
 }
 
+
+/* ============================================================
+   V42 - CỐ ĐỊNH BANNER + MENU NHƯ MỘT HEADER
+   Phần này được đặt CUỐI CSS để ghi đè các thiết lập sticky cũ.
+   ============================================================ */
+
+:root {
+    --fixed-header-width: 1180px;
+    --fixed-banner-height: 132px;
+    --fixed-menu-height: 46px;
+}
+
+/* Chừa khoảng trống cho header cố định để nội dung không bị che */
+div[data-testid="stMainBlockContainer"],
+.block-container {
+    padding-top: 205px !important;
+}
+
+/* Cố định phần tử Streamlit chứa banner */
+div[data-testid="stElementContainer"]:has(.sticky-app-header.banner-image-header) {
+    position: fixed !important;
+    top: 8px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    width: min(var(--fixed-header-width), calc(100vw - 32px)) !important;
+    z-index: 99999 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: var(--background-color, #ffffff) !important;
+}
+
+/* Một số phiên bản Streamlit bọc markdown thêm 1 lớp */
+div[data-testid="stMarkdownContainer"]:has(.sticky-app-header.banner-image-header) {
+    position: relative !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* Banner */
+.sticky-app-header.banner-image-header {
+    position: relative !important;
+    top: auto !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: var(--background-color, #ffffff) !important;
+    overflow: visible !important;
+}
+
+.sticky-app-header.banner-image-header .main-banner-image {
+    display: block !important;
+    width: 100% !important;
+    height: var(--fixed-banner-height) !important;
+    max-height: var(--fixed-banner-height) !important;
+    object-fit: cover !important;
+    object-position: center !important;
+    border-radius: 16px !important;
+    margin: 0 !important;
+}
+
+/* Cố định thanh menu ngay dưới banner */
+div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
+    position: fixed !important;
+    top: 140px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    width: min(var(--fixed-header-width), calc(100vw - 32px)) !important;
+    min-height: var(--fixed-menu-height) !important;
+    z-index: 99998 !important;
+    margin: 0 !important;
+    padding: 4px 0 6px 0 !important;
+    background: var(--background-color, #ffffff) !important;
+    border-bottom: 1px solid rgba(128,128,128,.25) !important;
+    box-shadow: 0 4px 12px rgba(15,23,42,.06) !important;
+    backdrop-filter: blur(10px) !important;
+    -webkit-backdrop-filter: blur(10px) !important;
+}
+
+/* Giữ các nút tab gọn trong thanh menu */
+div[data-testid="stTabs"] > div[data-baseweb="tab-list"] button[data-baseweb="tab"] {
+    min-height: 38px !important;
+    padding: 0.45rem 0.8rem !important;
+}
+
+div[data-testid="stTabs"] > div[data-baseweb="tab-list"] button[data-baseweb="tab"] p {
+    font-size: 0.95rem !important;
+    line-height: 1.15 !important;
+}
+
+/* Mobile/tablet */
+@media (max-width: 900px) {
+    :root {
+        --fixed-banner-height: 94px;
+        --fixed-menu-height: 44px;
+    }
+
+    div[data-testid="stMainBlockContainer"],
+    .block-container {
+        padding-top: 165px !important;
+    }
+
+    div[data-testid="stElementContainer"]:has(.sticky-app-header.banner-image-header) {
+        top: 6px !important;
+        width: calc(100vw - 12px) !important;
+    }
+
+    .sticky-app-header.banner-image-header .main-banner-image {
+        height: var(--fixed-banner-height) !important;
+        max-height: var(--fixed-banner-height) !important;
+        border-radius: 12px !important;
+    }
+
+    div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
+        top: 104px !important;
+        width: calc(100vw - 12px) !important;
+        overflow-x: auto !important;
+        flex-wrap: nowrap !important;
+    }
+
+    div[data-testid="stTabs"] > div[data-baseweb="tab-list"] button[data-baseweb="tab"] {
+        min-width: max-content !important;
+    }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
