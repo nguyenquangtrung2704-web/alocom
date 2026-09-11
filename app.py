@@ -1877,6 +1877,14 @@ with tab2:
                         f"**🍽️ Món ăn đã được đặt:** {', '.join(ordered_dishes)}"
                     )
 
+                    # Thông báo lấy cơm khi trong ngày có ít nhất một đơn đã giao
+                    has_delivered = any(
+                        str(r.get("status", "")).strip().lower() == "đã giao"
+                        for r in rows
+                    )
+                    if has_delivered:
+                        st.success("🍱 Vui lòng đến Phòng Công nghệ thông tin để lấy cơm đã đặt.")
+
                 # Lấy thực đơn hiện tại để luôn dùng hình ảnh mới nhất của từng món.
                 try:
                     current_menu_items = load_menu(include_inactive=True)
