@@ -1192,6 +1192,65 @@ div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
     }
 }
 
+
+/* ============================================================
+   V40 - CỐ ĐỊNH LUÔN THANH MENU KHI CUỘN
+   Banner cố định ở trên, menu cố định ngay bên dưới.
+   ============================================================ */
+
+/* Banner */
+div[data-testid="stElementContainer"]:has(.sticky-app-header.banner-image-header),
+div[data-testid="stMarkdownContainer"]:has(.sticky-app-header.banner-image-header) {
+    position: fixed !important;
+    top: 3.55rem !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    width: min(1180px, calc(100vw - 2rem)) !important;
+    z-index: 10000 !important;
+    background: var(--background-color, #ffffff) !important;
+}
+
+/* Thanh menu chính */
+div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
+    position: fixed !important;
+    top: calc(3.55rem + 153px) !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    width: min(1180px, calc(100vw - 2rem)) !important;
+    z-index: 9999 !important;
+    background: var(--background-color, #ffffff) !important;
+    margin: 0 !important;
+    padding: 5px 4px 7px 4px !important;
+    border-bottom: 1px solid rgba(128,128,128,.22) !important;
+    box-shadow: 0 5px 14px rgba(15,23,42,.08) !important;
+}
+
+/* Chừa khoảng trống để nội dung không bị banner + menu che */
+div[data-testid="stMainBlockContainer"],
+.block-container {
+    padding-top: 255px !important;
+}
+
+/* Mobile */
+@media (max-width: 900px) {
+    div[data-testid="stElementContainer"]:has(.sticky-app-header.banner-image-header),
+    div[data-testid="stMarkdownContainer"]:has(.sticky-app-header.banner-image-header) {
+        width: calc(100vw - 1rem) !important;
+    }
+
+    div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
+        top: calc(3.55rem + 113px) !important;
+        width: calc(100vw - 1rem) !important;
+        overflow-x: auto !important;
+        flex-wrap: nowrap !important;
+    }
+
+    div[data-testid="stMainBlockContainer"],
+    .block-container {
+        padding-top: 205px !important;
+    }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
