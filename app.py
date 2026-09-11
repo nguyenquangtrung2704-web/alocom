@@ -2382,7 +2382,29 @@ with tab3:
                 "Quản trị viên xác nhận sau khi thực tế nhận được tiền chuyển khoản. "
                 "Khi chuyển sang Đã thanh toán và bấm Cập nhật, ngày xác nhận sẽ tự động lấy ngày hiện hành của hệ thống."
             )
+ # ---------------- QR CHUYỂN KHOẢN ----------------
+        qr_path = FilePath("bank_qr.png")
 
+        qr_col1, qr_col2 = st.columns([1.2, 3.8])
+
+        with qr_col1:
+            if qr_path.exists():
+                st.image(
+                    str(qr_path),
+                    caption="Quét QR để chuyển khoản",
+                    width=220
+                )
+            else:
+                st.info("Chưa tìm thấy ảnh QR bank_qr.png")
+
+        with qr_col2:
+            st.markdown("#### 📱 Quét mã QR để chuyển khoản")
+            st.write(
+                "Vui lòng quét mã QR bên cạnh để chuyển khoản. "
+                "Sau khi chuyển khoản thành công, quản trị viên sẽ xác nhận trạng thái thanh toán."
+            )
+
+        st.divider()
             try:
                 payment_map = load_monthly_payments(selected_year, selected_month)
                 dashboard_members = load_members(include_inactive=True) if supabase else []
