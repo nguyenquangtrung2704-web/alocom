@@ -1101,77 +1101,92 @@ button[data-baseweb="tab"][aria-selected="true"] p {
 
 
 /* ============================================================
-   V38 - CỐ ĐỊNH BANNER + MENU KHI CUỘN TRANG
+   V39 - CỐ ĐỊNH THẬT SỰ BANNER + MENU (position: fixed)
+   Dùng fixed thay vì sticky để không bị ảnh hưởng bởi cấu trúc DOM của Streamlit.
    ============================================================ */
 
-div[data-testid="stAppViewContainer"],
-section.main,
-div[data-testid="stMain"],
-div.block-container,
-div[data-testid="stTabs"] {
-    overflow: visible !important;
+/* Chừa khoảng trống phía trên cho banner + menu cố định */
+div[data-testid="stMainBlockContainer"],
+.block-container {
+    padding-top: 250px !important;
 }
 
 /* Cố định wrapper chứa banner */
-div[data-testid="stMarkdownContainer"]:has(.sticky-app-header.banner-image-header),
-div[data-testid="stElementContainer"]:has(.sticky-app-header.banner-image-header) {
-    position: sticky !important;
-    top: 0 !important;
-    z-index: 9999 !important;
-    background: var(--background-color, #ffffff) !important;
+div[data-testid="stElementContainer"]:has(.sticky-app-header.banner-image-header),
+div[data-testid="stMarkdownContainer"]:has(.sticky-app-header.banner-image-header) {
+    position: fixed !important;
+    top: 3.55rem !important; /* nằm ngay dưới thanh công cụ Streamlit */
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    width: min(1180px, calc(100vw - 2rem)) !important;
+    z-index: 9998 !important;
     margin: 0 !important;
     padding: 0 !important;
+    background: var(--background-color, #ffffff) !important;
 }
 
-/* Bản thân banner */
+/* Bản thân banner không cần sticky nữa */
 .sticky-app-header.banner-image-header {
     position: relative !important;
     top: auto !important;
     z-index: auto !important;
     width: 100% !important;
     margin: 0 !important;
-    padding: 6px 0 4px 0 !important;
+    padding: 4px 0 !important;
     background: var(--background-color, #ffffff) !important;
 }
 
+/* Kích thước banner */
 .sticky-app-header.banner-image-header .main-banner-image {
     display: block !important;
     width: 100% !important;
-    height: 150px !important;
-    max-height: 150px !important;
+    height: 145px !important;
+    max-height: 145px !important;
     object-fit: cover !important;
     object-position: center !important;
     border-radius: 18px !important;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, .10) !important;
 }
 
-/* Cố định menu ngay dưới banner */
+/* Cố định thanh menu ngay dưới banner */
 div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
-    position: sticky !important;
-    top: 160px !important;
-    z-index: 9998 !important;
-    width: 100% !important;
+    position: fixed !important;
+    top: calc(3.55rem + 153px) !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    width: min(1180px, calc(100vw - 2rem)) !important;
+    z-index: 9997 !important;
+    margin: 0 !important;
+    padding: 5px 4px 7px 4px !important;
     background: var(--background-color, #ffffff) !important;
     backdrop-filter: blur(12px) !important;
     -webkit-backdrop-filter: blur(12px) !important;
     border-bottom: 1px solid rgba(128,128,128,.22) !important;
+    box-shadow: 0 5px 14px rgba(15,23,42,.06) !important;
 }
 
-/* Bóng nhẹ */
-div[data-testid="stMarkdownContainer"]:has(.sticky-app-header.banner-image-header),
-div[data-testid="stElementContainer"]:has(.sticky-app-header.banner-image-header),
-div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
-    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06) !important;
-}
-
+/* Mobile / tablet */
 @media (max-width: 900px) {
+    div[data-testid="stMainBlockContainer"],
+    .block-container {
+        padding-top: 195px !important;
+    }
+
+    div[data-testid="stElementContainer"]:has(.sticky-app-header.banner-image-header),
+    div[data-testid="stMarkdownContainer"]:has(.sticky-app-header.banner-image-header) {
+        top: 3.55rem !important;
+        width: calc(100vw - 1rem) !important;
+    }
+
     .sticky-app-header.banner-image-header .main-banner-image {
-        height: 108px !important;
-        max-height: 108px !important;
+        height: 105px !important;
+        max-height: 105px !important;
         border-radius: 14px !important;
     }
 
     div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
-        top: 116px !important;
+        top: calc(3.55rem + 113px) !important;
+        width: calc(100vw - 1rem) !important;
         overflow-x: auto !important;
         flex-wrap: nowrap !important;
     }
