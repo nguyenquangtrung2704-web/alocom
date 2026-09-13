@@ -1438,6 +1438,19 @@ def delete_payment_proof(member_id, year, month, proof_path):
     )
 
 
+
+def admin_delete_member_login(member_id):
+    """Xóa tài khoản đăng nhập của thành viên nhưng giữ hồ sơ thành viên."""
+    if admin_supabase is None:
+        raise RuntimeError("Chưa cấu hình SUPABASE_SECRET_KEY trong Streamlit Secrets.")
+    return (
+        admin_supabase.table("member_accounts")
+        .delete()
+        .eq("member_id", int(member_id))
+        .execute()
+    )
+
+
 # ============================================================
 # THANH TOÁN / XÁC NHẬN CHUYỂN KHOẢN THEO THÁNG
 # ============================================================
@@ -2876,7 +2889,6 @@ with tab3:
         if mode == "Theo tháng":
             st.markdown("### 💳 Tình trạng chuyển khoản")
             st.caption(
-                "Thành viên đăng nhập vào tài khoản của mình để upload hình ảnh đã chuyển khoản."
                 "Quản trị viên xác nhận sau khi thực tế nhận được tiền chuyển khoản. "
                 "Khi chuyển sang Đã thanh toán và bấm Cập nhật, ngày xác nhận sẽ tự động lấy ngày hiện hành của hệ thống."
             )
@@ -3435,6 +3447,152 @@ if is_admin:
                 "Bảng này chỉ hiển thị trong khu vực quản trị. "
                 "Nhấn “👁 Hiện mật khẩu” khi cần xem."
             )
+
+            st.markdown("#### ✏️ Chỉnh sửa / xóa tài khoản")
+
+            editable_accounts = []
+            for member_id, account in sorted(
+                member_accounts.items(),
+                key=lambda x: str(
+                    members_by_id.get(int(x[0]), {}).get("full_name", "")
+                ).lower()
+            ):
+                member = members_by_id.get(int(member_id), {})
+                editable_accounts.append({
+                    "member_id": int(member_id),
+                    "full_name": member.get("full_name", ""),
+                    "login_id": account.get("login_id", ""),
+                    "admin_password": account.get("admin_password") or "",
+                })
+
+            for account in editable_accounts:
+                member_id = account["member_id"]
+                full_name = account["full_name"]
+                login_id = account["login_id"]
+                admin_password = account["admin_password"]
+
+                with st.container(border=True):
+                    title_col, edit_col, delete_col = st.columns([5, 1, 1])
+
+                    with title_col:
+                        st.markdown(
+                            f"**{full_name}**  \n"
+                            f"ID hiện tại: `{login_id}`"
+                        )
+
+                    edit_state_key = f"edit_account_mode_{member_id}"
+                    confirm_delete_key = f"confirm_delete_account_{member_id}"
+
+                    with edit_col:
+                        if st.button(
+                            "✏️ Sửa",
+                            key=f"edit_account_btn_{member_id}",
+                            use_container_width=True
+                        ):
+                            st.session_state[edit_state_key] = True
+                            st.session_state[confirm_delete_key] = False
+                            st.rerun()
+
+                    with delete_col:
+                        if st.button(
+                            "🗑️ Xóa",
+                            key=f"delete_account_btn_{member_id}",
+                            use_container_width=True
+                        ):
+                            st.session_state[confirm_delete_key] = True
+                            st.session_state[edit_state_key] = False
+                            st.rerun()
+
+                    if st.session_state.get(confirm_delete_key, False):
+                        st.warning(
+                            f"Xóa tài khoản đăng nhập của **{full_name}**? "
+                            "Hồ sơ thành viên vẫn được giữ lại."
+                        )
+                        dc1, dc2 = st.columns(2)
+
+                        with dc1:
+                            if st.button(
+                                "✅ Xác nhận xóa tài khoản",
+                                type="primary",
+                                key=f"confirm_delete_account_btn_{member_id}",
+                                use_container_width=True
+                            ):
+                                try:
+                                    admin_delete_member_login(member_id)
+                                    st.session_state[confirm_delete_key] = False
+                                    st.success("Đã xóa tài khoản đăng nhập.")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error("Không xóa được tài khoản.")
+                                    st.caption(str(e))
+
+                        with dc2:
+                            if st.button(
+                                "Hủy",
+                                key=f"cancel_delete_account_btn_{member_id}",
+                                use_container_width=True
+                            ):
+                                st.session_state[confirm_delete_key] = False
+                                st.rerun()
+
+                    if st.session_state.get(edit_state_key, False):
+                        st.info(
+                            "Chỉnh sửa ID hoặc mật khẩu bên dưới rồi bấm "
+                            "“💾 Cập nhật tài khoản”."
+                        )
+
+                        ec1, ec2 = st.columns(2)
+                        with ec1:
+                            edited_login_id = st.text_input(
+                                "ID đăng nhập mới",
+                                value=login_id,
+                                key=f"edit_login_id_{member_id}"
+                            )
+
+                        with ec2:
+                            edited_password = st.text_input(
+                                "Mật khẩu mới",
+                                value=admin_password,
+                                type="password",
+                                key=f"edit_password_{member_id}"
+                            )
+
+                        uc1, uc2 = st.columns([2, 1])
+
+                        with uc1:
+                            if st.button(
+                                "💾 Cập nhật tài khoản",
+                                type="primary",
+                                key=f"update_account_btn_{member_id}",
+                                use_container_width=True
+                            ):
+                                try:
+                                    if not edited_login_id.strip():
+                                        st.error("ID đăng nhập không được để trống.")
+                                    elif not edited_password:
+                                        st.error("Mật khẩu không được để trống.")
+                                    else:
+                                        admin_set_member_login(
+                                            member_id,
+                                            edited_login_id,
+                                            edited_password
+                                        )
+                                        st.session_state[edit_state_key] = False
+                                        st.success("Đã cập nhật tài khoản.")
+                                        st.rerun()
+                                except Exception as e:
+                                    st.error("Không cập nhật được tài khoản.")
+                                    st.caption(str(e))
+
+                        with uc2:
+                            if st.button(
+                                "Hủy sửa",
+                                key=f"cancel_edit_account_btn_{member_id}",
+                                use_container_width=True
+                            ):
+                                st.session_state[edit_state_key] = False
+                                st.rerun()
+
             st.divider()
 
         if not members:
