@@ -3347,6 +3347,128 @@ with tab3:
                         key=f"payment_editor_{selected_year}_{selected_month}",
                     )
 
+                    st.markdown("#### 🛠️ Quản lý hình ảnh chuyển khoản")
+                    st.caption(
+                        "Quản trị viên có thể thay hình hoặc xóa hình minh chứng "
+                        "của từng thành viên nếu hình được tải lên sai."
+                    )
+
+                    for member_name, meta in payment_meta.items():
+                        member_id = meta.get("member_id")
+                        if member_id is None:
+                            continue
+
+                        payment = payment_map.get(member_id, {}) or {}
+                        proof_path = payment.get("proof_path")
+                        proof_url = signed_proof_url(proof_path)
+
+                        with st.expander(
+                            f"🧾 {member_name}",
+                            expanded=False
+                        ):
+                            img_col, action_col = st.columns([1, 2])
+
+                            with img_col:
+                                if proof_url:
+                                    st.image(
+                                        proof_url,
+                                        caption="Hình hiện tại",
+                                        width=180
+                                    )
+                                else:
+                                    st.info("Chưa có hình chuyển khoản.")
+
+                            with action_col:
+                                admin_new_proof = st.file_uploader(
+                                    "Chọn hình mới",
+                                    type=["jpg", "jpeg", "png", "webp"],
+                                    key=(
+                                        f"admin_replace_proof_{member_id}_"
+                                        f"{selected_year}_{selected_month}"
+                                    )
+                                )
+
+                                btn_update_col, btn_delete_col = st.columns(2)
+
+                                with btn_update_col:
+                                    if st.button(
+                                        "🔄 Cập nhật hình",
+                                        type="primary",
+                                        use_container_width=True,
+                                        key=(
+                                            f"admin_update_proof_{member_id}_"
+                                            f"{selected_year}_{selected_month}"
+                                        )
+                                    ):
+                                        try:
+                                            if admin_new_proof is None:
+                                                st.error("Vui lòng chọn hình mới trước.")
+                                            else:
+                                                old_proof_path = proof_path
+
+                                                upload_payment_proof(
+                                                    member_id,
+                                                    member_name,
+                                                    int(selected_year),
+                                                    int(selected_month),
+                                                    meta["amount_due"],
+                                                    admin_new_proof
+                                                )
+
+                                                refreshed = get_member_payment(
+                                                    member_id,
+                                                    int(selected_year),
+                                                    int(selected_month)
+                                                ) or {}
+                                                new_proof_path = refreshed.get("proof_path")
+
+                                                if (
+                                                    old_proof_path
+                                                    and new_proof_path
+                                                    and old_proof_path != new_proof_path
+                                                ):
+                                                    try:
+                                                        admin_supabase.storage.from_(
+                                                            "payment-proofs"
+                                                        ).remove([old_proof_path])
+                                                    except Exception:
+                                                        pass
+
+                                                st.success(
+                                                    f"Đã cập nhật hình của {member_name}."
+                                                )
+                                                st.rerun()
+                                        except Exception as e:
+                                            st.error("Không cập nhật được hình.")
+                                            st.caption(str(e))
+
+                                with btn_delete_col:
+                                    if st.button(
+                                        "🗑️ Xóa hình",
+                                        use_container_width=True,
+                                        disabled=not bool(proof_path),
+                                        key=(
+                                            f"admin_delete_proof_{member_id}_"
+                                            f"{selected_year}_{selected_month}"
+                                        )
+                                    ):
+                                        try:
+                                            delete_payment_proof(
+                                                member_id,
+                                                int(selected_year),
+                                                int(selected_month),
+                                                proof_path
+                                            )
+                                            st.success(
+                                                f"Đã xóa hình của {member_name}."
+                                            )
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error("Không xóa được hình.")
+                                            st.caption(str(e))
+
+                    st.divider()
+
                     st.caption(
                         "💡 Sau khi kiểm tra hình chuyển khoản và đổi trạng thái, "
                         "bấm nút Cập nhật bên dưới để lưu. "
