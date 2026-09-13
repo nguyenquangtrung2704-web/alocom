@@ -3255,14 +3255,43 @@ with tab3:
                             st.caption(str(e))
 
                 else:
+                    # Hiển thị công khai ảnh minh chứng chuyển khoản.
+                    public_proof_rows = [
+                        row for row in payment_rows
+                        if str(row.get("Hình ảnh", "")).strip()
+                    ]
+
+                    if public_proof_rows:
+                        st.markdown("#### 🖼️ Minh chứng chuyển khoản")
+                        st.caption(
+                            "Ảnh minh chứng do thành viên đã tải lên và được hiển thị công khai."
+                        )
+
+                        public_cols = st.columns(min(3, len(public_proof_rows)))
+
+                        for idx, row in enumerate(public_proof_rows):
+                            with public_cols[idx % len(public_cols)]:
+                                st.markdown(f"**{row['Họ tên']}**")
+                                st.image(
+                                    row["Hình ảnh"],
+                                    caption=f"Ảnh chuyển khoản - {row['Họ tên']}",
+                                    use_container_width=True
+                                )
+
+                    # Bảng công khai chỉ hiện thông tin cần thiết,
+                    # không hiện đường link ảnh dạng chữ.
+                    public_payment_df = payment_df[
+                        ["Họ tên", "Số tiền tháng", "Trạng thái", "Ngày xác nhận"]
+                    ].copy()
+
                     st.dataframe(
-                        payment_df,
+                        public_payment_df,
                         use_container_width=True,
                         hide_index=True,
                     )
                     st.caption(
                         "Trạng thái thanh toán do quản trị viên xác nhận. "
-                        "Thành viên chỉ xem, không thể chỉnh sửa."
+                        "Mọi người có thể xem, nhưng không thể chỉnh sửa."
                     )
             else:
                 st.caption("Tháng này chưa phát sinh tiền cơm để đối chiếu.")
