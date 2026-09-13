@@ -1297,7 +1297,7 @@ def load_member_accounts_admin():
         return {}
     result = (
         admin_supabase.table("member_accounts")
-        .select("member_id,login_id,active")
+        .select("member_id,login_id,admin_password,active")
         .execute()
     )
     return {int(r["member_id"]): r for r in (result.data or [])}
@@ -3239,6 +3239,56 @@ if is_admin:
             member_accounts = {}
             st.error("Không đọc được bảng members.")
             st.caption(str(e))
+
+        if member_accounts:
+            st.markdown("### 🔐 Danh sách tài khoản đăng nhập")
+
+            show_member_passwords = st.checkbox(
+                "👁 Hiện mật khẩu",
+                value=False,
+                key="show_member_passwords_admin"
+            )
+
+            members_by_id = {int(m["id"]): m for m in members}
+            account_rows = []
+
+            for member_id, account in sorted(
+                member_accounts.items(),
+                key=lambda x: str(
+                    members_by_id.get(int(x[0]), {}).get("full_name", "")
+                ).lower()
+            ):
+                member = members_by_id.get(int(member_id), {})
+                raw_password = account.get("admin_password") or ""
+
+                account_rows.append({
+                    "Họ và tên": member.get("full_name", ""),
+                    "ID đăng nhập": account.get("login_id", ""),
+                    "Mật khẩu": (
+                        raw_password
+                        if show_member_passwords
+                        else ("••••••••" if raw_password else "—")
+                    ),
+                    "Trạng thái": "Đang sử dụng" if account.get("active", True) else "Đã khóa",
+                })
+
+            st.dataframe(
+                account_rows,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Họ và tên": st.column_config.TextColumn("Họ và tên"),
+                    "ID đăng nhập": st.column_config.TextColumn("ID đăng nhập"),
+                    "Mật khẩu": st.column_config.TextColumn("Mật khẩu"),
+                    "Trạng thái": st.column_config.TextColumn("Trạng thái"),
+                },
+            )
+
+            st.caption(
+                "Bảng này chỉ hiển thị trong khu vực quản trị. "
+                "Nhấn “👁 Hiện mật khẩu” khi cần xem."
+            )
+            st.divider()
 
         if not members:
             st.info("Chưa có thành viên nào.")
