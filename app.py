@@ -1119,6 +1119,21 @@ def get_supabase():
 
 supabase = get_supabase()
 
+@st.cache_resource
+def get_supabase_admin():
+    """Client máy chủ dùng Secret key; chỉ dùng cho nghiệp vụ nhạy cảm."""
+    if create_client is None:
+        return None
+    try:
+        return create_client(
+            st.secrets["SUPABASE_URL"],
+            st.secrets["SUPABASE_SECRET_KEY"]
+        )
+    except Exception:
+        return None
+
+admin_supabase = get_supabase_admin()
+
 # ============================================================
 # HÀM HỖ TRỢ
 # ============================================================
@@ -1242,6 +1257,158 @@ def delete_member(member_id):
         .eq("id", member_id)
         .execute()
     )
+
+
+# ============================================================
+# TÀI KHOẢN THÀNH VIÊN / MINH CHỨNG CHUYỂN KHOẢN
+# ============================================================
+def member_login(login_id, password):
+    """Đăng nhập thành viên qua RPC; không đọc trực tiếp bảng mật khẩu."""
+    if supabase is None:
+        return None
+    result = supabase.rpc(
+        "member_login",
+        {
+            "p_login_id": login_id.strip(),
+            "p_password": password
+        }
+    ).execute()
+    rows = result.data or []
+    return rows[0] if rows else None
+
+
+def admin_set_member_login(member_id, login_id, new_password):
+    """Quản trị tạo/cập nhật ID + password. Cần SUPABASE_SECRET_KEY."""
+    if admin_supabase is None:
+        raise RuntimeError("Chưa cấu hình SUPABASE_SECRET_KEY trong Streamlit Secrets.")
+    return admin_supabase.rpc(
+        "admin_set_member_login",
+        {
+            "p_member_id": int(member_id),
+            "p_login_id": login_id.strip(),
+            "p_password": new_password
+        }
+    ).execute()
+
+
+def load_member_accounts_admin():
+    """Chỉ quản trị đọc ID đăng nhập; không trả password hash ra giao diện."""
+    if admin_supabase is None:
+        return {}
+    result = (
+        admin_supabase.table("member_accounts")
+        .select("member_id,login_id,active")
+        .execute()
+    )
+    return {int(r["member_id"]): r for r in (result.data or [])}
+
+
+def get_member_amount_due(member_name, year, month):
+    rows = load_orders_by_month(int(year), int(month))
+    return sum(
+        int(r.get("unit_price", 0) or 0) * int(r.get("quantity", 0) or 0)
+        for r in rows
+        if str(r.get("customer_name", "")).strip() == member_name.strip()
+    )
+
+
+def get_member_payment(member_id, year, month):
+    if supabase is None:
+        return None
+    result = (
+        supabase.table("monthly_payments")
+        .select("*")
+        .eq("member_id", int(member_id))
+        .eq("payment_year", int(year))
+        .eq("payment_month", int(month))
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    return rows[0] if rows else None
+
+
+def upload_payment_proof(member_id, member_name, year, month, amount_due, uploaded_file):
+    """Upload ảnh minh chứng vào bucket private và ghi đường dẫn vào monthly_payments."""
+    if admin_supabase is None:
+        raise RuntimeError("Chưa cấu hình SUPABASE_SECRET_KEY trong Streamlit Secrets.")
+    if uploaded_file is None:
+        raise ValueError("Vui lòng chọn hình ảnh chuyển khoản.")
+
+    suffix = FilePath(uploaded_file.name).suffix.lower()
+    if suffix not in [".jpg", ".jpeg", ".png", ".webp"]:
+        suffix = ".jpg"
+
+    object_path = (
+        f"{int(year)}/{int(month):02d}/"
+        f"member_{int(member_id)}_{uuid.uuid4().hex}{suffix}"
+    )
+
+    admin_supabase.storage.from_("payment-proofs").upload(
+        object_path,
+        uploaded_file.getvalue(),
+        file_options={
+            "content-type": uploaded_file.type or "image/jpeg",
+            "upsert": "false"
+        }
+    )
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    existing = (
+        admin_supabase.table("monthly_payments")
+        .select("id")
+        .eq("member_id", int(member_id))
+        .eq("payment_year", int(year))
+        .eq("payment_month", int(month))
+        .limit(1)
+        .execute()
+    )
+
+    payload = {
+        "member_id": int(member_id),
+        "member_name": member_name.strip(),
+        "payment_year": int(year),
+        "payment_month": int(month),
+        "amount_due": int(amount_due),
+        "proof_path": object_path,
+        "proof_uploaded_at": now_iso,
+        "updated_at": now_iso,
+    }
+
+    if existing.data:
+        return (
+            admin_supabase.table("monthly_payments")
+            .update(payload)
+            .eq("id", existing.data[0]["id"])
+            .execute()
+        )
+
+    payload.update({
+        "paid": False,
+        "payment_method": None,
+        "received_at": None,
+        "created_at": now_iso,
+    })
+    return admin_supabase.table("monthly_payments").insert(payload).execute()
+
+
+def signed_proof_url(proof_path, expires_in=3600):
+    if not proof_path or admin_supabase is None:
+        return None
+    try:
+        result = admin_supabase.storage.from_("payment-proofs").create_signed_url(
+            proof_path,
+            expires_in
+        )
+        if isinstance(result, dict):
+            return (
+                result.get("signedURL")
+                or result.get("signedUrl")
+                or result.get("signed_url")
+            )
+        return None
+    except Exception:
+        return None
 
 # ============================================================
 # THANH TOÁN / XÁC NHẬN CHUYỂN KHOẢN THEO THÁNG
@@ -1547,11 +1714,17 @@ if "admin_logged_in" not in st.session_state:
 admin_password = get_admin_password()
 is_admin = st.session_state["admin_logged_in"]
 
+if "member_logged_in" not in st.session_state:
+    st.session_state["member_logged_in"] = False
+    st.session_state["member_id"] = None
+    st.session_state["member_name"] = None
+
 if not is_admin:
-    tab1, tab2, tab3, login_tab = st.tabs([
+    tab1, tab2, tab3, member_tab, login_tab = st.tabs([
         "📝 Đặt cơm",
         "📋 Đơn theo ngày",
         "📊 Tổng hợp",
+        "👤 Tài khoản thành viên",
         "🔐 Đăng nhập quản trị"
     ])
     tab4 = None
@@ -1580,6 +1753,7 @@ if not is_admin:
                 st.error("Mật khẩu quản trị không đúng.")
 
 else:
+    member_tab = None
     tab1, tab2, tab3, logout_tab, tab4, tab5 = st.tabs([
         "📝 Đặt cơm",
         "📋 Đơn theo ngày",
@@ -1599,6 +1773,133 @@ else:
         ):
             st.session_state["admin_logged_in"] = False
             st.rerun()
+
+
+# ============================================================
+# CỔNG TÀI KHOẢN THÀNH VIÊN
+# ============================================================
+if member_tab is not None:
+    with member_tab:
+        if not st.session_state["member_logged_in"]:
+            st.subheader("👤 Đăng nhập thành viên")
+            st.caption("Đăng nhập bằng ID và mật khẩu do quản trị viên cấp.")
+
+            member_login_id = st.text_input(
+                "ID đăng nhập",
+                key="member_login_id"
+            )
+            member_login_password = st.text_input(
+                "Mật khẩu",
+                type="password",
+                key="member_login_password"
+            )
+
+            if st.button(
+                "Đăng nhập thành viên",
+                type="primary",
+                use_container_width=True,
+                key="member_login_btn"
+            ):
+                try:
+                    member_info = member_login(member_login_id, member_login_password)
+                    if member_info:
+                        st.session_state["member_logged_in"] = True
+                        st.session_state["member_id"] = int(member_info["member_id"])
+                        st.session_state["member_name"] = member_info["full_name"]
+                        st.rerun()
+                    else:
+                        st.error("ID hoặc mật khẩu không đúng.")
+                except Exception as e:
+                    st.error("Không đăng nhập được.")
+                    st.caption(str(e))
+        else:
+            member_id = int(st.session_state["member_id"])
+            member_name = st.session_state["member_name"]
+
+            c_name, c_logout = st.columns([4, 1])
+            with c_name:
+                st.subheader(f"💳 Tình trạng chuyển khoản của {member_name}")
+            with c_logout:
+                if st.button("Đăng xuất", key="member_logout_btn"):
+                    st.session_state["member_logged_in"] = False
+                    st.session_state["member_id"] = None
+                    st.session_state["member_name"] = None
+                    st.rerun()
+
+            today = date.today()
+            mc1, mc2 = st.columns(2)
+            with mc1:
+                member_month = st.selectbox(
+                    "Tháng",
+                    list(range(1, 13)),
+                    index=today.month - 1,
+                    key="member_payment_month"
+                )
+            with mc2:
+                member_year = st.number_input(
+                    "Năm",
+                    min_value=2024,
+                    max_value=2100,
+                    value=today.year,
+                    step=1,
+                    key="member_payment_year"
+                )
+
+            amount_due = get_member_amount_due(
+                member_name, int(member_year), int(member_month)
+            )
+            payment = get_member_payment(
+                member_id, int(member_year), int(member_month)
+            ) or {}
+
+            st.metric("Số tiền cần thanh toán", money(amount_due))
+
+            if payment.get("paid"):
+                st.success("✅ Quản trị viên đã xác nhận nhận được chuyển khoản.")
+            elif payment.get("proof_path"):
+                st.warning("🧾 Đã gửi hình chuyển khoản – đang chờ quản trị viên kiểm tra.")
+            else:
+                st.info("⏳ Chưa gửi minh chứng chuyển khoản.")
+
+            proof_url = signed_proof_url(payment.get("proof_path"))
+            if proof_url:
+                st.image(
+                    proof_url,
+                    caption="Hình chuyển khoản bạn đã gửi",
+                    width=360
+                )
+
+            uploaded_proof = st.file_uploader(
+                "📷 Tải hình ảnh chuyển khoản",
+                type=["jpg", "jpeg", "png", "webp"],
+                key=f"member_proof_{member_id}_{member_year}_{member_month}"
+            )
+
+            if st.button(
+                "📤 Gửi hình chuyển khoản",
+                type="primary",
+                use_container_width=True,
+                key=f"upload_proof_btn_{member_id}_{member_year}_{member_month}"
+            ):
+                try:
+                    if amount_due <= 0:
+                        st.error("Tháng này chưa có tiền cơm cần thanh toán.")
+                    elif uploaded_proof is None:
+                        st.error("Vui lòng chọn hình ảnh trước khi gửi.")
+                    else:
+                        upload_payment_proof(
+                            member_id,
+                            member_name,
+                            int(member_year),
+                            int(member_month),
+                            amount_due,
+                            uploaded_proof
+                        )
+                        st.success("Đã gửi hình chuyển khoản. Vui lòng chờ quản trị viên xác nhận.")
+                        st.rerun()
+                except Exception as e:
+                    st.error("Không tải được hình chuyển khoản.")
+                    st.caption(str(e))
 
 # ============================================================
 # TAB 1 - ĐẶT CƠM
@@ -2567,9 +2868,12 @@ with tab3:
 
                 status_text = "🟢 Đã thanh toán" if is_paid else "🟡 Chưa thanh toán"
 
+                proof_url = signed_proof_url(payment.get("proof_path"))
+
                 payment_rows.append({
                     "Họ tên": member_name,
                     "Số tiền tháng": money(info["total"]),
+                    "Hình ảnh": proof_url or "",
                     "Trạng thái": status_text,
                     "Ngày xác nhận": received_text,
                 })
@@ -2600,8 +2904,12 @@ with tab3:
                         payment_df,
                         use_container_width=True,
                         hide_index=True,
-                        disabled=["Họ tên", "Số tiền tháng", "Ngày xác nhận"],
+                        disabled=["Họ tên", "Số tiền tháng", "Hình ảnh", "Ngày xác nhận"],
                         column_config={
+                            "Hình ảnh": st.column_config.ImageColumn(
+                                "Hình ảnh",
+                                help="Hình chuyển khoản do thành viên tải lên."
+                            ),
                             "Trạng thái": st.column_config.SelectboxColumn(
                                 "Trạng thái",
                                 options=["🟡 Chưa thanh toán", "🟢 Đã thanh toán"],
@@ -2925,8 +3233,10 @@ if is_admin:
 
         try:
             members = load_members(include_inactive=True)
+            member_accounts = load_member_accounts_admin()
         except Exception as e:
             members = []
+            member_accounts = {}
             st.error("Không đọc được bảng members.")
             st.caption(str(e))
 
@@ -2950,6 +3260,47 @@ if is_admin:
                         value=bool(member["active"]),
                         key=f"member_active_{member['id']}"
                     )
+
+                account = member_accounts.get(int(member["id"]), {})
+                login_col, pass_col = st.columns(2)
+                with login_col:
+                    login_id_value = st.text_input(
+                        "ID đăng nhập",
+                        value=account.get("login_id", ""),
+                        key=f"member_login_id_admin_{member['id']}"
+                    )
+                with pass_col:
+                    new_member_password = st.text_input(
+                        "Mật khẩu mới",
+                        type="password",
+                        placeholder="Để trống nếu không đổi",
+                        key=f"member_password_admin_{member['id']}"
+                    )
+
+                cred_col1, cred_col2 = st.columns([2, 3])
+                with cred_col1:
+                    if st.button(
+                        "🔑 Lưu tài khoản",
+                        key=f"save_member_account_{member['id']}"
+                    ):
+                        if not login_id_value.strip():
+                            st.error("ID đăng nhập không được để trống.")
+                        elif not account and not new_member_password:
+                            st.error("Tài khoản mới phải có mật khẩu.")
+                        elif not new_member_password:
+                            st.info("Không đổi mật khẩu vì ô mật khẩu đang để trống.")
+                        else:
+                            try:
+                                admin_set_member_login(
+                                    member["id"],
+                                    login_id_value,
+                                    new_member_password
+                                )
+                                st.success("Đã lưu ID và mật khẩu thành viên.")
+                                st.rerun()
+                            except Exception as e:
+                                st.error("Không lưu được tài khoản.")
+                                st.caption(str(e))
 
                 with c3:
                     st.write("")
