@@ -3255,39 +3255,39 @@ with tab3:
                             st.caption(str(e))
 
                 else:
-                    # Hiển thị công khai ảnh minh chứng chuyển khoản.
-                    public_proof_rows = [
-                        row for row in payment_rows
-                        if str(row.get("Hình ảnh", "")).strip()
-                    ]
-
-                    if public_proof_rows:
-                        st.markdown("#### 🖼️ Minh chứng chuyển khoản")
-                        st.caption(
-                            "Ảnh minh chứng do thành viên đã tải lên và được hiển thị công khai."
-                        )
-
-                        public_cols = st.columns(min(3, len(public_proof_rows)))
-
-                        for idx, row in enumerate(public_proof_rows):
-                            with public_cols[idx % len(public_cols)]:
-                                st.markdown(f"**{row['Họ tên']}**")
-                                st.image(
-                                    row["Hình ảnh"],
-                                    caption=f"Ảnh chuyển khoản - {row['Họ tên']}",
-                                    use_container_width=True
-                                )
-
-                    # Bảng công khai chỉ hiện thông tin cần thiết,
-                    # không hiện đường link ảnh dạng chữ.
+                    # Bảng công khai hiển thị trực tiếp ảnh trong cột Hình ảnh.
                     public_payment_df = payment_df[
-                        ["Họ tên", "Số tiền tháng", "Trạng thái", "Ngày xác nhận"]
+                        ["Họ tên", "Số tiền tháng", "Hình ảnh", "Trạng thái", "Ngày xác nhận"]
                     ].copy()
 
                     st.dataframe(
                         public_payment_df,
                         use_container_width=True,
                         hide_index=True,
+                        row_height=110,
+                        column_config={
+                            "Họ tên": st.column_config.TextColumn(
+                                "Họ tên",
+                                width="medium"
+                            ),
+                            "Số tiền tháng": st.column_config.TextColumn(
+                                "Số tiền tháng",
+                                width="small"
+                            ),
+                            "Hình ảnh": st.column_config.ImageColumn(
+                                "Hình ảnh",
+                                help="Ảnh minh chứng chuyển khoản do thành viên tải lên.",
+                                width="medium"
+                            ),
+                            "Trạng thái": st.column_config.TextColumn(
+                                "Trạng thái",
+                                width="medium"
+                            ),
+                            "Ngày xác nhận": st.column_config.TextColumn(
+                                "Ngày xác nhận",
+                                width="small"
+                            ),
+                        },
                     )
                     st.caption(
                         "Trạng thái thanh toán do quản trị viên xác nhận. "
