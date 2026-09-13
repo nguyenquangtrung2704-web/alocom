@@ -3811,46 +3811,8 @@ if is_admin:
 
             st.divider()
 
-        if not members:
-            st.info("Chưa có thành viên nào.")
-
-        for member in members:
-            with st.container(border=True):
-                c1, c2, c3 = st.columns([4, 2, 2])
-
-                with c1:
-                    edited_name = st.text_input(
-                        "Họ và tên",
-                        value=member["full_name"],
-                        key=f"member_name_{member['id']}"
-                    )
-
-                with c2:
-                    active = st.checkbox(
-                        "Đang sử dụng",
-                        value=bool(member["active"]),
-                        key=f"member_active_{member['id']}"
-                    )
-
-                with c3:
-                    st.write("")
-                    if st.button("💾 Lưu", key=f"save_member_{member['id']}"):
-                        if not edited_name.strip():
-                            st.error("Tên thành viên không được để trống.")
-                        else:
-                            try:
-                                update_member(member["id"], edited_name, active)
-                                st.success("Đã cập nhật thành viên.")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(str(e))
-
-                    if st.button("🗑️ Xóa", key=f"delete_member_{member['id']}"):
-                        try:
-                            delete_member(member["id"])
-                            st.rerun()
-                        except Exception as e:
-                            st.error(str(e))
+        # Phần thẻ "Danh sách thành viên" riêng đã được lược bỏ.
+        # Việc quản lý tài khoản thực hiện trực tiếp ở bảng tài khoản phía trên.
 
 
 st.divider()
