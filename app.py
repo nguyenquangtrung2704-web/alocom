@@ -2985,7 +2985,6 @@ with tab3:
         if mode == "Theo tháng":
             st.markdown("### 💳 Tình trạng chuyển khoản")
             st.caption(
-                "Thành viên đăng nhập vào tài khoản đã được cung cấp để cập nhật việc chuyển khoản."
                 "Quản trị viên xác nhận sau khi thực tế nhận được tiền chuyển khoản. "
                 "Khi chuyển sang Đã thanh toán và bấm Cập nhật, ngày xác nhận sẽ tự động lấy ngày hiện hành của hệ thống."
             )
@@ -3605,6 +3604,16 @@ if is_admin:
                     st.caption(str(e))
 
         st.divider()
+
+        # Tải lại danh sách thành viên và tài khoản trước khi hiển thị.
+        try:
+            members = load_members(include_inactive=True)
+            member_accounts = load_member_accounts_admin()
+        except Exception as e:
+            members = []
+            member_accounts = {}
+            st.error("Không tải được danh sách thành viên/tài khoản.")
+            st.caption(str(e))
 
         if member_accounts:
             st.markdown("### 🔐 Danh sách tài khoản đăng nhập")
