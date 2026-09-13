@@ -2985,7 +2985,7 @@ with tab3:
         if mode == "Theo tháng":
             st.markdown("### 💳 Tình trạng chuyển khoản")
             st.caption(
-                "Thành viên đăng nhập vào tài khoản của mình để cập nhật hình ảnh đã chuyển khoản."
+                "Thành viên đăng nhập vào tài khoản đã được cung cấp để cập nhật việc chuyển khoản."
                 "Quản trị viên xác nhận sau khi thực tế nhận được tiền chuyển khoản. "
                 "Khi chuyển sang Đã thanh toán và bấm Cập nhật, ngày xác nhận sẽ tự động lấy ngày hiện hành của hệ thống."
             )
@@ -3516,6 +3516,9 @@ if is_admin:
 
         st.divider()
         st.markdown("### ➕ Thêm thành viên mới")
+        st.caption(
+            "Khi thêm thành viên, tạo luôn ID đăng nhập và mật khẩu để người đó có thể sử dụng tài khoản."
+        )
 
         new_member_name = st.text_input(
             "Họ và tên",
@@ -3523,29 +3526,85 @@ if is_admin:
             key="new_member_name"
         )
 
-        if st.button("➕ Thêm thành viên", key="add_member_btn"):
-            if not new_member_name.strip():
-                st.error("Vui lòng nhập họ và tên.")
-            else:
-                try:
-                    add_member(new_member_name)
-                    st.success("Đã thêm thành viên mới.")
+        add_login_col, add_password_col = st.columns(2)
+        with add_login_col:
+            new_member_login_id = st.text_input(
+                "ID đăng nhập",
+                placeholder="Ví dụ: nguyenthimai",
+                key="new_member_login_id"
+            )
+        with add_password_col:
+            new_member_password = st.text_input(
+                "Mật khẩu",
+                type="password",
+                placeholder="Tối thiểu 6 ký tự",
+                key="new_member_password"
+            )
+
+        if st.button(
+            "➕ Thêm thành viên và tạo tài khoản",
+            type="primary",
+            key="add_member_with_account_btn"
+        ):
+            try:
+                clean_name = new_member_name.strip()
+                clean_login_id = new_member_login_id.strip()
+
+                if not clean_name:
+                    st.error("Vui lòng nhập họ và tên.")
+                elif not clean_login_id:
+                    st.error("Vui lòng nhập ID đăng nhập.")
+                elif not new_member_password:
+                    st.error("Vui lòng nhập mật khẩu.")
+                elif len(new_member_password) < 6:
+                    st.error("Mật khẩu phải có ít nhất 6 ký tự.")
+                else:
+                    # Tạo hồ sơ thành viên trước.
+                    insert_result = (
+                        supabase.table("members")
+                        .insert({
+                            "full_name": clean_name,
+                            "active": True
+                        })
+                        .execute()
+                    )
+
+                    created_rows = insert_result.data or []
+                    if not created_rows:
+                        raise RuntimeError("Không lấy được ID thành viên vừa tạo.")
+
+                    new_member_id = int(created_rows[0]["id"])
+
+                    try:
+                        # Tạo tài khoản đăng nhập ngay cho thành viên vừa thêm.
+                        admin_set_member_login(
+                            new_member_id,
+                            clean_login_id,
+                            new_member_password
+                        )
+                    except Exception:
+                        # Nếu tạo tài khoản lỗi thì xóa hồ sơ vừa tạo để tránh dữ liệu dở dang.
+                        try:
+                            supabase.table("members").delete().eq(
+                                "id", new_member_id
+                            ).execute()
+                        except Exception:
+                            pass
+                        raise
+
+                    st.success(
+                        f"Đã thêm {clean_name} và tạo tài khoản đăng nhập thành công."
+                    )
                     st.rerun()
-                except Exception as e:
-                    st.error("Không thêm được thành viên.")
+
+            except Exception as e:
+                st.error("Không thêm được thành viên/tài khoản.")
+                if "duplicate" in str(e).lower() or "unique" in str(e).lower():
+                    st.caption("ID đăng nhập này có thể đã được sử dụng. Vui lòng chọn ID khác.")
+                else:
                     st.caption(str(e))
 
         st.divider()
-        st.markdown("### 📋 Danh sách thành viên")
-
-        try:
-            members = load_members(include_inactive=True)
-            member_accounts = load_member_accounts_admin()
-        except Exception as e:
-            members = []
-            member_accounts = {}
-            st.error("Không đọc được bảng members.")
-            st.caption(str(e))
 
         if member_accounts:
             st.markdown("### 🔐 Danh sách tài khoản đăng nhập")
@@ -3763,47 +3822,6 @@ if is_admin:
                         value=bool(member["active"]),
                         key=f"member_active_{member['id']}"
                     )
-
-                account = member_accounts.get(int(member["id"]), {})
-                login_col, pass_col = st.columns(2)
-                with login_col:
-                    login_id_value = st.text_input(
-                        "ID đăng nhập",
-                        value=account.get("login_id", ""),
-                        key=f"member_login_id_admin_{member['id']}"
-                    )
-                with pass_col:
-                    new_member_password = st.text_input(
-                        "Mật khẩu mới",
-                        type="password",
-                        placeholder="Để trống nếu không đổi",
-                        key=f"member_password_admin_{member['id']}"
-                    )
-
-                cred_col1, cred_col2 = st.columns([2, 3])
-                with cred_col1:
-                    if st.button(
-                        "🔑 Lưu tài khoản",
-                        key=f"save_member_account_{member['id']}"
-                    ):
-                        if not login_id_value.strip():
-                            st.error("ID đăng nhập không được để trống.")
-                        elif not account and not new_member_password:
-                            st.error("Tài khoản mới phải có mật khẩu.")
-                        elif not new_member_password:
-                            st.info("Không đổi mật khẩu vì ô mật khẩu đang để trống.")
-                        else:
-                            try:
-                                admin_set_member_login(
-                                    member["id"],
-                                    login_id_value,
-                                    new_member_password
-                                )
-                                st.success("Đã lưu ID và mật khẩu thành viên.")
-                                st.rerun()
-                            except Exception as e:
-                                st.error("Không lưu được tài khoản.")
-                                st.caption(str(e))
 
                 with c3:
                     st.write("")
