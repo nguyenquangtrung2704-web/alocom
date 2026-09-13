@@ -2876,6 +2876,7 @@ with tab3:
         if mode == "Theo tháng":
             st.markdown("### 💳 Tình trạng chuyển khoản")
             st.caption(
+                "Thành viên đăng nhập vào tài khoản của mình để upload hình ảnh đã chuyển khoản."
                 "Quản trị viên xác nhận sau khi thực tế nhận được tiền chuyển khoản. "
                 "Khi chuyển sang Đã thanh toán và bấm Cập nhật, ngày xác nhận sẽ tự động lấy ngày hiện hành của hệ thống."
             )
