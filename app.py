@@ -1825,29 +1825,43 @@ if member_tab is not None:
     with member_tab:
         if not st.session_state["member_logged_in"]:
             st.subheader("👤 Đăng nhập thành viên")
-            st.caption("Đăng nhập bằng ID và mật khẩu do quản trị viên cấp.")
-
-            member_login_id = st.text_input(
-                "ID đăng nhập",
-                key="member_login_id"
-            )
-            member_login_password = st.text_input(
-                "Mật khẩu",
-                type="password",
-                key="member_login_password"
+            st.caption(
+                "Đăng nhập bằng ID và mật khẩu do quản trị viên cấp. "
+                "Sau khi nhập mật khẩu, có thể nhấn Enter để đăng nhập."
             )
 
-            if st.button(
-                "Đăng nhập thành viên",
-                type="primary",
-                use_container_width=True,
-                key="member_login_btn"
+            with st.form(
+                "member_login_form",
+                clear_on_submit=False,
+                enter_to_submit=True
             ):
+                member_login_id = st.text_input(
+                    "ID đăng nhập",
+                    key="member_login_id"
+                )
+                member_login_password = st.text_input(
+                    "Mật khẩu",
+                    type="password",
+                    key="member_login_password"
+                )
+
+                member_login_submit = st.form_submit_button(
+                    "Đăng nhập thành viên",
+                    type="primary",
+                    use_container_width=True
+                )
+
+            if member_login_submit:
                 try:
-                    member_info = member_login(member_login_id, member_login_password)
+                    member_info = member_login(
+                        member_login_id,
+                        member_login_password
+                    )
                     if member_info:
                         st.session_state["member_logged_in"] = True
-                        st.session_state["member_id"] = int(member_info["member_id"])
+                        st.session_state["member_id"] = int(
+                            member_info["member_id"]
+                        )
                         st.session_state["member_name"] = member_info["full_name"]
                         st.session_state["member_login_id"] = member_login_id.strip()
                         st.session_state["show_member_change_password"] = False
