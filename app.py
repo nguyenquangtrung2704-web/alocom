@@ -2985,7 +2985,6 @@ with tab3:
         if mode == "Theo tháng":
             st.markdown("### 💳 Tình trạng chuyển khoản")
             st.caption(
-                "Thành viên đăng nhập vào tài khoản của mình để upload hình ảnh chuyển khoản lên."
                 "Quản trị viên xác nhận sau khi thực tế nhận được tiền chuyển khoản. "
                 "Khi chuyển sang Đã thanh toán và bấm Cập nhật, ngày xác nhận sẽ tự động lấy ngày hiện hành của hệ thống."
             )
@@ -3156,16 +3155,37 @@ with tab3:
                         unsafe_allow_html=True
                     )
 
+                    # Hiển thị hình minh chứng thật để quản trị viên xem ngay.
+                    proof_rows = [
+                        row for row in payment_rows
+                        if str(row.get("Hình ảnh", "")).strip()
+                    ]
+
+                    if proof_rows:
+                        st.markdown("#### 🖼️ Minh chứng chuyển khoản")
+                        preview_cols = st.columns(min(3, len(proof_rows)))
+
+                        for idx, row in enumerate(proof_rows):
+                            with preview_cols[idx % len(preview_cols)]:
+                                st.markdown(f"**{row['Họ tên']}**")
+                                st.image(
+                                    row["Hình ảnh"],
+                                    caption=f"Ảnh chuyển khoản - {row['Họ tên']}",
+                                    use_container_width=True
+                                )
+
+                    # Bảng trạng thái vẫn chỉnh sửa bình thường,
+                    # nhưng không hiển thị URL chữ ở cột hình ảnh nữa.
+                    payment_df_for_edit = payment_df[
+                        ["Họ tên", "Số tiền tháng", "Trạng thái", "Ngày xác nhận"]
+                    ].copy()
+
                     edited_payment_df = st.data_editor(
-                        payment_df,
+                        payment_df_for_edit,
                         use_container_width=True,
                         hide_index=True,
-                        disabled=["Họ tên", "Số tiền tháng", "Hình ảnh", "Ngày xác nhận"],
+                        disabled=["Họ tên", "Số tiền tháng", "Ngày xác nhận"],
                         column_config={
-                            "Hình ảnh": st.column_config.ImageColumn(
-                                "Hình ảnh",
-                                help="Hình chuyển khoản do thành viên tải lên."
-                            ),
                             "Trạng thái": st.column_config.SelectboxColumn(
                                 "Trạng thái",
                                 options=["🟡 Chưa thanh toán", "🟢 Đã thanh toán"],
@@ -3180,7 +3200,8 @@ with tab3:
                     )
 
                     st.caption(
-                        "💡 Sau khi đổi trạng thái, bấm nút Cập nhật bên dưới để lưu. "
+                        "💡 Sau khi kiểm tra hình chuyển khoản và đổi trạng thái, "
+                        "bấm nút Cập nhật bên dưới để lưu. "
                         "Ngày xác nhận chỉ được ghi khi trạng thái là 🟢 Đã thanh toán."
                     )
 
