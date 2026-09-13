@@ -1713,6 +1713,17 @@ def add_order(customer_name, order_date, dish_name, unit_price, quantity, note):
         .execute()
     )
 
+def update_order_dish(order_id, dish_name, unit_price):
+    return (
+        supabase.table("orders")
+        .update({
+            "dish_name": str(dish_name).strip(),
+            "unit_price": int(unit_price)
+        })
+        .eq("id", int(order_id))
+        .execute()
+    )
+
 def delete_order(order_id):
     return (
         supabase.table("orders")
@@ -2600,6 +2611,105 @@ with tab2:
                         with c2:
                             st.markdown(f"**{row['dish_name']}**")
                             st.caption(f"{money(row['unit_price'])}/suất")
+
+                            # Quản trị viên có thể đổi món đã đặt sang món khác.
+                            if is_admin:
+                                edit_dish_key = f"edit_order_dish_{row['id']}"
+
+                                if st.button(
+                                    "✏️ Chỉnh sửa món",
+                                    key=f"open_edit_order_dish_{row['id']}",
+                                    use_container_width=True
+                                ):
+                                    st.session_state[edit_dish_key] = not st.session_state.get(
+                                        edit_dish_key, False
+                                    )
+                                    st.rerun()
+
+                                if st.session_state.get(edit_dish_key, False):
+                                    available_menu = [
+                                        item for item in current_menu_items
+                                        if item.get("active", True)
+                                    ]
+
+                                    # Nếu món cũ đã ngừng bán thì vẫn giữ nó trong danh sách
+                                    # để quản trị viên thấy món ban đầu trước khi đổi.
+                                    option_names = [
+                                        str(item.get("dish_name") or "").strip()
+                                        for item in available_menu
+                                        if str(item.get("dish_name") or "").strip()
+                                    ]
+
+                                    old_dish_name = str(row.get("dish_name") or "").strip()
+                                    if old_dish_name and old_dish_name not in option_names:
+                                        option_names.insert(0, old_dish_name)
+
+                                    if option_names:
+                                        try:
+                                            current_idx = option_names.index(old_dish_name)
+                                        except ValueError:
+                                            current_idx = 0
+
+                                        replacement_dish = st.selectbox(
+                                            "Món thay thế",
+                                            option_names,
+                                            index=current_idx,
+                                            key=f"replacement_dish_{row['id']}"
+                                        )
+
+                                        selected_price = int(row.get("unit_price", 0) or 0)
+                                        for menu_item in current_menu_items:
+                                            if (
+                                                str(menu_item.get("dish_name") or "").strip()
+                                                == replacement_dish
+                                            ):
+                                                selected_price = int(
+                                                    menu_item.get("price", selected_price) or selected_price
+                                                )
+                                                break
+
+                                        st.caption(
+                                            f"Giá món thay thế: {money(selected_price)}/suất"
+                                        )
+
+                                        save_col, cancel_col = st.columns([2, 1])
+
+                                        with save_col:
+                                            if st.button(
+                                                "💾 Cập nhật món",
+                                                type="primary",
+                                                key=f"save_replacement_dish_{row['id']}",
+                                                use_container_width=True
+                                            ):
+                                                try:
+                                                    update_order_dish(
+                                                        row["id"],
+                                                        replacement_dish,
+                                                        selected_price
+                                                    )
+                                                    st.session_state[edit_dish_key] = False
+                                                    st.success(
+                                                        f"Đã đổi món của {row['customer_name']} "
+                                                        f"sang {replacement_dish}."
+                                                    )
+                                                    st.rerun()
+                                                except Exception as e:
+                                                    st.error(
+                                                        f"Không cập nhật được món: {e}"
+                                                    )
+
+                                        with cancel_col:
+                                            if st.button(
+                                                "Hủy",
+                                                key=f"cancel_replacement_dish_{row['id']}",
+                                                use_container_width=True
+                                            ):
+                                                st.session_state[edit_dish_key] = False
+                                                st.rerun()
+                                    else:
+                                        st.warning(
+                                            "Hiện chưa có món đang bán trong Quản trị thực đơn."
+                                        )
 
                         with c3:
                             st.write(f"**SL: {row['quantity']}**")
