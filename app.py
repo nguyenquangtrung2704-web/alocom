@@ -1713,12 +1713,25 @@ def add_order(customer_name, order_date, dish_name, unit_price, quantity, note):
         .execute()
     )
 
-def update_order_dish(order_id, dish_name, unit_price):
+def update_order_dish(order_id, old_dish_name, dish_name, unit_price, current_note=""):
+    old_name = str(old_dish_name or "").strip()
+    new_name = str(dish_name or "").strip()
+    existing_note = str(current_note or "").strip()
+
+    replacement_note = f"{old_name} thay bằng {new_name}"
+
+    # Giữ ghi chú cũ của người đặt (nếu có) và thêm thông báo đổi món.
+    if existing_note and replacement_note.lower() not in existing_note.lower():
+        updated_note = f"{existing_note} | {replacement_note}"
+    else:
+        updated_note = replacement_note
+
     return (
         supabase.table("orders")
         .update({
-            "dish_name": str(dish_name).strip(),
-            "unit_price": int(unit_price)
+            "dish_name": new_name,
+            "unit_price": int(unit_price),
+            "note": updated_note
         })
         .eq("id", int(order_id))
         .execute()
@@ -2684,8 +2697,10 @@ with tab2:
                                                 try:
                                                     update_order_dish(
                                                         row["id"],
+                                                        row.get("dish_name", ""),
                                                         replacement_dish,
-                                                        selected_price
+                                                        selected_price,
+                                                        row.get("note", "")
                                                     )
                                                     st.session_state[edit_dish_key] = False
                                                     st.success(
