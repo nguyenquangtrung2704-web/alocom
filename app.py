@@ -3286,45 +3286,47 @@ with tab3:
                         unsafe_allow_html=True
                     )
 
-                    # Hiển thị hình minh chứng thật để quản trị viên xem ngay.
-                    proof_rows = [
-                        row for row in payment_rows
-                        if str(row.get("Hình ảnh", "")).strip()
-                    ]
-
-                    if proof_rows:
-                        st.markdown("#### 🖼️ Minh chứng chuyển khoản")
-                        preview_cols = st.columns(min(3, len(proof_rows)))
-
-                        for idx, row in enumerate(proof_rows):
-                            with preview_cols[idx % len(preview_cols)]:
-                                st.markdown(f"**{row['Họ tên']}**")
-                                st.image(
-                                    row["Hình ảnh"],
-                                    caption=f"Ảnh chuyển khoản - {row['Họ tên']}",
-                                    use_container_width=True
-                                )
-
-                    # Bảng trạng thái vẫn chỉnh sửa bình thường,
-                    # nhưng không hiển thị URL chữ ở cột hình ảnh nữa.
+                    # Trong chế độ quản trị, hiển thị ảnh trực tiếp ngay trong
+                    # cột "Hình ảnh", giống bảng mà thành viên/người xem công khai thấy.
                     payment_df_for_edit = payment_df[
-                        ["Họ tên", "Số tiền tháng", "Trạng thái", "Ngày xác nhận"]
+                        ["Họ tên", "Số tiền tháng", "Hình ảnh", "Trạng thái", "Ngày xác nhận"]
                     ].copy()
 
                     edited_payment_df = st.data_editor(
                         payment_df_for_edit,
                         use_container_width=True,
                         hide_index=True,
-                        disabled=["Họ tên", "Số tiền tháng", "Ngày xác nhận"],
+                        row_height=110,
+                        disabled=[
+                            "Họ tên",
+                            "Số tiền tháng",
+                            "Hình ảnh",
+                            "Ngày xác nhận"
+                        ],
                         column_config={
+                            "Họ tên": st.column_config.TextColumn(
+                                "Họ tên",
+                                width="medium"
+                            ),
+                            "Số tiền tháng": st.column_config.TextColumn(
+                                "Số tiền tháng",
+                                width="small"
+                            ),
+                            "Hình ảnh": st.column_config.ImageColumn(
+                                "Hình ảnh",
+                                help="Ảnh minh chứng chuyển khoản do thành viên tải lên.",
+                                width="medium"
+                            ),
                             "Trạng thái": st.column_config.SelectboxColumn(
                                 "Trạng thái",
                                 options=["🟡 Chưa thanh toán", "🟢 Đã thanh toán"],
                                 required=True,
+                                width="medium"
                             ),
                             "Ngày xác nhận": st.column_config.TextColumn(
                                 "Ngày xác nhận",
-                                help="Tự động cập nhật theo ngày hệ thống khi bấm Cập nhật."
+                                help="Tự động cập nhật theo ngày hệ thống khi bấm Cập nhật.",
+                                width="small"
                             ),
                         },
                         key=f"payment_editor_{selected_year}_{selected_month}",
