@@ -1775,18 +1775,25 @@ if not is_admin:
 
     with login_tab:
         st.subheader("🔐 Đăng nhập quản trị")
-        login_password = st.text_input(
-            "Mật khẩu quản trị",
-            type="password",
-            key="global_admin_login_password"
-        )
 
-        if st.button(
-            "Đăng nhập",
-            type="primary",
-            use_container_width=True,
-            key="global_admin_login_button"
+        with st.form(
+            "admin_login_form",
+            clear_on_submit=False,
+            enter_to_submit=True
         ):
+            login_password = st.text_input(
+                "Mật khẩu quản trị",
+                type="password",
+                key="global_admin_login_password"
+            )
+
+            admin_login_submit = st.form_submit_button(
+                "Đăng nhập",
+                type="primary",
+                use_container_width=True
+            )
+
+        if admin_login_submit:
             if not admin_password:
                 st.error("Chưa thiết lập ADMIN_PASSWORD trong Streamlit Secrets.")
             elif login_password == admin_password:
