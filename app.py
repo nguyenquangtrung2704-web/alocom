@@ -1759,7 +1759,7 @@ if "member_logged_in" not in st.session_state:
     st.session_state["member_logged_in"] = False
     st.session_state["member_id"] = None
     st.session_state["member_name"] = None
-    st.session_state["member_login_id"] = None
+    st.session_state["logged_member_login_id"] = None
     st.session_state["show_member_change_password"] = False
 
 if not is_admin:
@@ -1863,7 +1863,7 @@ if member_tab is not None:
                             member_info["member_id"]
                         )
                         st.session_state["member_name"] = member_info["full_name"]
-                        st.session_state["member_login_id"] = member_login_id.strip()
+                        st.session_state["logged_member_login_id"] = member_login_id.strip()
                         st.session_state["show_member_change_password"] = False
                         st.rerun()
                     else:
@@ -1891,7 +1891,7 @@ if member_tab is not None:
                         st.session_state["member_logged_in"] = False
                         st.session_state["member_id"] = None
                         st.session_state["member_name"] = None
-                        st.session_state["member_login_id"] = None
+                        st.session_state["logged_member_login_id"] = None
                         st.session_state["show_member_change_password"] = False
                         st.rerun()
 
@@ -1938,7 +1938,7 @@ if member_tab is not None:
                                 else:
                                     # Kiểm tra mật khẩu cũ bằng chính hàm đăng nhập hiện có.
                                     account = member_login(
-                                        st.session_state.get("member_login_id", ""),
+                                        st.session_state.get("logged_member_login_id", ""),
                                         old_password
                                     )
 
