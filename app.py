@@ -1410,6 +1410,34 @@ def signed_proof_url(proof_path, expires_in=3600):
     except Exception:
         return None
 
+
+def delete_payment_proof(member_id, year, month, proof_path):
+    """Xóa ảnh minh chứng và gỡ đường dẫn khỏi tháng tương ứng."""
+    if admin_supabase is None:
+        raise RuntimeError("Chưa cấu hình SUPABASE_SECRET_KEY trong Streamlit Secrets.")
+
+    if proof_path:
+        try:
+            admin_supabase.storage.from_("payment-proofs").remove([proof_path])
+        except Exception:
+            # Vẫn cho phép xóa tham chiếu DB nếu file storage đã mất.
+            pass
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    return (
+        admin_supabase.table("monthly_payments")
+        .update({
+            "proof_path": None,
+            "proof_uploaded_at": None,
+            "updated_at": now_iso,
+        })
+        .eq("member_id", int(member_id))
+        .eq("payment_year", int(year))
+        .eq("payment_month", int(month))
+        .execute()
+    )
+
+
 # ============================================================
 # THANH TOÁN / XÁC NHẬN CHUYỂN KHOẢN THEO THÁNG
 # ============================================================
@@ -1827,79 +1855,197 @@ if member_tab is not None:
                     st.rerun()
 
             today = date.today()
-            mc1, mc2 = st.columns(2)
-            with mc1:
-                member_month = st.selectbox(
-                    "Tháng",
-                    list(range(1, 13)),
-                    index=today.month - 1,
-                    key="member_payment_month"
-                )
-            with mc2:
-                member_year = st.number_input(
-                    "Năm",
-                    min_value=2024,
-                    max_value=2100,
-                    value=today.year,
-                    step=1,
-                    key="member_payment_year"
-                )
 
-            amount_due = get_member_amount_due(
-                member_name, int(member_year), int(member_month)
-            )
-            payment = get_member_payment(
-                member_id, int(member_year), int(member_month)
-            ) or {}
-
-            st.metric("Số tiền cần thanh toán", money(amount_due))
-
-            if payment.get("paid"):
-                st.success("✅ Quản trị viên đã xác nhận nhận được chuyển khoản.")
-            elif payment.get("proof_path"):
-                st.warning("🧾 Đã gửi hình chuyển khoản – đang chờ quản trị viên kiểm tra.")
-            else:
-                st.info("⏳ Chưa gửi minh chứng chuyển khoản.")
-
-            proof_url = signed_proof_url(payment.get("proof_path"))
-            if proof_url:
-                st.image(
-                    proof_url,
-                    caption="Hình chuyển khoản bạn đã gửi",
-                    width=360
-                )
-
-            uploaded_proof = st.file_uploader(
-                "📷 Tải hình ảnh chuyển khoản",
-                type=["jpg", "jpeg", "png", "webp"],
-                key=f"member_proof_{member_id}_{member_year}_{member_month}"
+            member_year = st.number_input(
+                "Năm cần xem",
+                min_value=2024,
+                max_value=2100,
+                value=today.year,
+                step=1,
+                key="member_payment_year"
             )
 
-            if st.button(
-                "📤 Gửi hình chuyển khoản",
-                type="primary",
-                use_container_width=True,
-                key=f"upload_proof_btn_{member_id}_{member_year}_{member_month}"
-            ):
-                try:
-                    if amount_due <= 0:
-                        st.error("Tháng này chưa có tiền cơm cần thanh toán.")
-                    elif uploaded_proof is None:
-                        st.error("Vui lòng chọn hình ảnh trước khi gửi.")
-                    else:
-                        upload_payment_proof(
-                            member_id,
-                            member_name,
-                            int(member_year),
-                            int(member_month),
-                            amount_due,
-                            uploaded_proof
+            st.markdown("### 📅 Thanh toán theo từng tháng")
+            st.caption(
+                "Mỗi tháng có khu vực tải hình chuyển khoản riêng. "
+                "Hình của tháng nào sẽ được lưu đúng vào tháng đó."
+            )
+
+            month_names = {
+                1: "Tháng 1", 2: "Tháng 2", 3: "Tháng 3", 4: "Tháng 4",
+                5: "Tháng 5", 6: "Tháng 6", 7: "Tháng 7", 8: "Tháng 8",
+                9: "Tháng 9", 10: "Tháng 10", 11: "Tháng 11", 12: "Tháng 12",
+            }
+
+            for month_no in range(1, 13):
+                amount_due = get_member_amount_due(
+                    member_name, int(member_year), month_no
+                )
+                payment = get_member_payment(
+                    member_id, int(member_year), month_no
+                ) or {}
+
+                if payment.get("paid"):
+                    status_icon = "✅"
+                    status_short = "Đã thanh toán"
+                elif payment.get("proof_path"):
+                    status_icon = "🧾"
+                    status_short = "Đã gửi hình - chờ xác nhận"
+                else:
+                    status_icon = "⏳"
+                    status_short = "Chưa gửi minh chứng"
+
+                # Mở sẵn tháng hiện tại để người dùng thao tác nhanh.
+                default_open = (
+                    int(member_year) == today.year
+                    and month_no == today.month
+                )
+
+                with st.expander(
+                    f"{status_icon} {month_names[month_no]} — "
+                    f"{money(amount_due)} — {status_short}",
+                    expanded=default_open
+                ):
+                    c_amount, c_status = st.columns([1, 2])
+
+                    with c_amount:
+                        st.metric(
+                            "Số tiền cần thanh toán",
+                            money(amount_due)
                         )
-                        st.success("Đã gửi hình chuyển khoản. Vui lòng chờ quản trị viên xác nhận.")
-                        st.rerun()
-                except Exception as e:
-                    st.error("Không tải được hình chuyển khoản.")
-                    st.caption(str(e))
+
+                    with c_status:
+                        if payment.get("paid"):
+                            st.success(
+                                "✅ Quản trị viên đã xác nhận nhận được chuyển khoản."
+                            )
+                        elif payment.get("proof_path"):
+                            st.warning(
+                                "🧾 Đã gửi hình chuyển khoản – "
+                                "đang chờ quản trị viên kiểm tra."
+                            )
+                        elif amount_due > 0:
+                            st.info("⏳ Chưa gửi minh chứng chuyển khoản.")
+                        else:
+                            st.caption("Tháng này chưa phát sinh tiền cơm.")
+
+                    proof_url = signed_proof_url(payment.get("proof_path"))
+                    if proof_url:
+                        st.image(
+                            proof_url,
+                            caption=f"Hình chuyển khoản {month_names[month_no]}",
+                            width=320
+                        )
+
+                    if payment.get("proof_path") and not payment.get("paid"):
+                        st.caption(
+                            "Nếu tải nhầm hình, bạn có thể chọn hình mới để thay thế "
+                            "hoặc xóa hình hiện tại."
+                        )
+
+                    uploaded_proof = st.file_uploader(
+                        (
+                            f"📷 Chọn hình mới để thay thế cho {month_names[month_no]}"
+                            if payment.get("proof_path")
+                            else f"📷 Tải hình chuyển khoản cho {month_names[month_no]}"
+                        ),
+                        type=["jpg", "jpeg", "png", "webp"],
+                        key=f"member_proof_{member_id}_{member_year}_{month_no}"
+                    )
+
+                    action_col1, action_col2 = st.columns([2, 1])
+
+                    with action_col1:
+                        button_label = (
+                            f"📤 Gửi hình chuyển khoản {month_names[month_no]}"
+                            if not payment.get("proof_path")
+                            else f"🔄 Cập nhật hình mới {month_names[month_no]}"
+                        )
+
+                        if st.button(
+                            button_label,
+                            type="primary",
+                            use_container_width=True,
+                            disabled=bool(payment.get("paid")),
+                            key=f"upload_proof_btn_{member_id}_{member_year}_{month_no}"
+                        ):
+                            try:
+                                if amount_due <= 0:
+                                    st.error(
+                                        f"{month_names[month_no]} chưa có tiền cơm "
+                                        "cần thanh toán."
+                                    )
+                                elif uploaded_proof is None:
+                                    st.error(
+                                        f"Vui lòng chọn hình mới cho "
+                                        f"{month_names[month_no]} trước khi cập nhật."
+                                    )
+                                else:
+                                    old_proof_path = payment.get("proof_path")
+                                    upload_payment_proof(
+                                        member_id,
+                                        member_name,
+                                        int(member_year),
+                                        month_no,
+                                        amount_due,
+                                        uploaded_proof
+                                    )
+
+                                    # Sau khi hình mới lưu thành công mới xóa file cũ.
+                                    refreshed = get_member_payment(
+                                        member_id, int(member_year), month_no
+                                    ) or {}
+                                    new_proof_path = refreshed.get("proof_path")
+                                    if (
+                                        old_proof_path
+                                        and new_proof_path
+                                        and old_proof_path != new_proof_path
+                                    ):
+                                        try:
+                                            admin_supabase.storage.from_(
+                                                "payment-proofs"
+                                            ).remove([old_proof_path])
+                                        except Exception:
+                                            pass
+
+                                    st.success(
+                                        f"Đã cập nhật hình chuyển khoản "
+                                        f"{month_names[month_no]}."
+                                    )
+                                    st.rerun()
+                            except Exception as e:
+                                st.error("Không cập nhật được hình chuyển khoản.")
+                                st.caption(str(e))
+
+                    with action_col2:
+                        if payment.get("proof_path"):
+                            if st.button(
+                                f"🗑️ Xóa hình",
+                                use_container_width=True,
+                                disabled=bool(payment.get("paid")),
+                                key=f"delete_proof_btn_{member_id}_{member_year}_{month_no}"
+                            ):
+                                try:
+                                    delete_payment_proof(
+                                        member_id,
+                                        int(member_year),
+                                        month_no,
+                                        payment.get("proof_path")
+                                    )
+                                    st.success(
+                                        f"Đã xóa hình chuyển khoản "
+                                        f"{month_names[month_no]}."
+                                    )
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error("Không xóa được hình chuyển khoản.")
+                                    st.caption(str(e))
+
+                    if payment.get("paid"):
+                        st.caption(
+                            "🔒 Tháng này đã được quản trị viên xác nhận thanh toán, "
+                            "nên hình chuyển khoản đã được khóa."
+                        )
 
 # ============================================================
 # TAB 1 - ĐẶT CƠM
