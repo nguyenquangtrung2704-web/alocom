@@ -1759,6 +1759,8 @@ if "member_logged_in" not in st.session_state:
     st.session_state["member_logged_in"] = False
     st.session_state["member_id"] = None
     st.session_state["member_name"] = None
+    st.session_state["member_login_id"] = None
+    st.session_state["show_member_change_password"] = False
 
 if not is_admin:
     tab1, tab2, tab3, member_tab, login_tab = st.tabs([
@@ -1847,6 +1849,8 @@ if member_tab is not None:
                         st.session_state["member_logged_in"] = True
                         st.session_state["member_id"] = int(member_info["member_id"])
                         st.session_state["member_name"] = member_info["full_name"]
+                        st.session_state["member_login_id"] = member_login_id.strip()
+                        st.session_state["show_member_change_password"] = False
                         st.rerun()
                     else:
                         st.error("ID hoặc mật khẩu không đúng.")
@@ -1857,15 +1861,107 @@ if member_tab is not None:
             member_id = int(st.session_state["member_id"])
             member_name = st.session_state["member_name"]
 
-            c_name, c_logout = st.columns([4, 1])
+            c_name, c_actions = st.columns([4, 2])
             with c_name:
                 st.subheader(f"💳 Tình trạng chuyển khoản của {member_name}")
-            with c_logout:
-                if st.button("Đăng xuất", key="member_logout_btn"):
-                    st.session_state["member_logged_in"] = False
-                    st.session_state["member_id"] = None
-                    st.session_state["member_name"] = None
-                    st.rerun()
+            with c_actions:
+                action_col1, action_col2 = st.columns(2)
+                with action_col1:
+                    if st.button("🔑 Đổi mật khẩu", key="member_change_password_btn"):
+                        st.session_state["show_member_change_password"] = not st.session_state.get(
+                            "show_member_change_password", False
+                        )
+                        st.rerun()
+                with action_col2:
+                    if st.button("Đăng xuất", key="member_logout_btn"):
+                        st.session_state["member_logged_in"] = False
+                        st.session_state["member_id"] = None
+                        st.session_state["member_name"] = None
+                        st.session_state["member_login_id"] = None
+                        st.session_state["show_member_change_password"] = False
+                        st.rerun()
+
+            if st.session_state.get("show_member_change_password", False):
+                with st.container(border=True):
+                    st.markdown("### 🔐 Đổi mật khẩu")
+
+                    old_password = st.text_input(
+                        "Mật khẩu cũ",
+                        type="password",
+                        key="member_old_password"
+                    )
+                    new_password = st.text_input(
+                        "Mật khẩu mới",
+                        type="password",
+                        key="member_new_password"
+                    )
+                    confirm_new_password = st.text_input(
+                        "Nhập lại mật khẩu mới",
+                        type="password",
+                        key="member_confirm_new_password"
+                    )
+
+                    cp_col1, cp_col2 = st.columns([2, 1])
+
+                    with cp_col1:
+                        if st.button(
+                            "✅ Đồng ý đổi mật khẩu",
+                            type="primary",
+                            use_container_width=True,
+                            key="member_confirm_change_password_btn"
+                        ):
+                            try:
+                                if not old_password:
+                                    st.error("Vui lòng nhập mật khẩu cũ.")
+                                elif not new_password:
+                                    st.error("Vui lòng nhập mật khẩu mới.")
+                                elif len(new_password) < 6:
+                                    st.error("Mật khẩu mới phải có ít nhất 6 ký tự.")
+                                elif new_password != confirm_new_password:
+                                    st.error("Mật khẩu mới nhập lại chưa khớp.")
+                                elif old_password == new_password:
+                                    st.error("Mật khẩu mới phải khác mật khẩu cũ.")
+                                else:
+                                    # Kiểm tra mật khẩu cũ bằng chính hàm đăng nhập hiện có.
+                                    account = member_login(
+                                        st.session_state.get("member_login_id", ""),
+                                        old_password
+                                    )
+
+                                    # Nếu session chưa lưu login_id, lấy từ bảng tài khoản qua service key.
+                                    if not account:
+                                        account_map = load_member_accounts_admin()
+                                        current_account = account_map.get(member_id, {})
+                                        current_login_id = current_account.get("login_id", "")
+                                        account = member_login(current_login_id, old_password)
+                                    else:
+                                        current_login_id = st.session_state.get(
+                                            "member_login_id", ""
+                                        )
+
+                                    if not account:
+                                        st.error("Mật khẩu cũ không đúng.")
+                                    else:
+                                        admin_set_member_login(
+                                            member_id,
+                                            current_login_id,
+                                            new_password
+                                        )
+                                        st.success("Đổi mật khẩu thành công.")
+                                        st.session_state["show_member_change_password"] = False
+                                        st.rerun()
+                            except Exception as e:
+                                st.error("Không đổi được mật khẩu.")
+                                st.caption(str(e))
+
+                    with cp_col2:
+                        if st.button(
+                            "Hủy",
+                            use_container_width=True,
+                            key="member_cancel_change_password_btn"
+                        ):
+                            st.session_state["show_member_change_password"] = False
+                            st.rerun()
 
             today = date.today()
 
