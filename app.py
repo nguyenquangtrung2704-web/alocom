@@ -5,6 +5,7 @@ from collections import defaultdict
 import pandas as pd
 from pathlib import Path as FilePath
 import uuid
+import re
 
 try:
     from supabase import create_client
@@ -1718,11 +1719,18 @@ def update_order_dish(order_id, old_dish_name, dish_name, unit_price, current_no
     new_name = str(dish_name or "").strip()
     existing_note = str(current_note or "").strip()
 
+    # Chỉ giữ lại ghi chú gốc của khách, còn ghi chú đổi món cũ sẽ bị thay thế.
+    parts = [p.strip() for p in existing_note.split("|") if p.strip()]
+    customer_notes = []
+
+    for part in parts:
+        if not re.search(r"^.+\s+thay bằng\s+.+$", part, flags=re.IGNORECASE):
+            customer_notes.append(part)
+
     replacement_note = f"{old_name} thay bằng {new_name}"
 
-    # Giữ ghi chú cũ của người đặt (nếu có) và thêm thông báo đổi món.
-    if existing_note and replacement_note.lower() not in existing_note.lower():
-        updated_note = f"{existing_note} | {replacement_note}"
+    if customer_notes:
+        updated_note = " | ".join(customer_notes + [replacement_note])
     else:
         updated_note = replacement_note
 
