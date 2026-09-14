@@ -3387,6 +3387,7 @@ with tab3:
                     "Họ tên": member_name,
                     "Cần thanh toán": money(outstanding),
                     "Hình ảnh": proof_url or "",
+                    "Xem lớn": proof_url or "",
                     "Trạng thái": status_text,
                     "Ghi chú": str(payment.get("payment_note") or ""),
                     "Đã thanh toán đến": received_text,
@@ -3419,18 +3420,19 @@ with tab3:
                     # Trong chế độ quản trị, hiển thị ảnh trực tiếp ngay trong
                     # cột "Hình ảnh", giống bảng mà thành viên/người xem công khai thấy.
                     payment_df_for_edit = payment_df[
-                        ["Họ tên", "Cần thanh toán", "Hình ảnh", "Trạng thái", "Ghi chú", "Đã thanh toán đến"]
+                        ["Họ tên", "Cần thanh toán", "Hình ảnh", "Xem lớn", "Trạng thái", "Ghi chú", "Đã thanh toán đến"]
                     ].copy()
 
                     edited_payment_df = st.data_editor(
                         payment_df_for_edit,
                         use_container_width=True,
                         hide_index=True,
-                        row_height=110,
+                        row_height=68,
                         disabled=[
                             "Họ tên",
                             "Cần thanh toán",
                             "Hình ảnh",
+                            "Xem lớn",
                             "Đã thanh toán đến"
                         ],
                         column_config={
@@ -3444,8 +3446,14 @@ with tab3:
                             ),
                             "Hình ảnh": st.column_config.ImageColumn(
                                 "Hình ảnh",
-                                help="Ảnh minh chứng chuyển khoản do thành viên tải lên.",
-                                width="medium"
+                                help="Ảnh minh chứng chuyển khoản.",
+                                width="small"
+                            ),
+                            "Xem lớn": st.column_config.LinkColumn(
+                                "Xem",
+                                help="Bấm để mở ảnh kích thước lớn.",
+                                display_text="🔍 Phóng lớn",
+                                width="small"
                             ),
                             "Trạng thái": st.column_config.SelectboxColumn(
                                 "Trạng thái",
@@ -3656,14 +3664,14 @@ with tab3:
                 else:
                     # Bảng công khai hiển thị trực tiếp ảnh trong cột Hình ảnh.
                     public_payment_df = payment_df[
-                        ["Họ tên", "Cần thanh toán", "Hình ảnh", "Trạng thái", "Ghi chú", "Đã thanh toán đến"]
+                        ["Họ tên", "Cần thanh toán", "Hình ảnh", "Xem lớn", "Trạng thái", "Ghi chú", "Đã thanh toán đến"]
                     ].copy()
 
                     st.dataframe(
                         public_payment_df,
                         use_container_width=True,
                         hide_index=True,
-                        row_height=110,
+                        row_height=68,
                         column_config={
                             "Họ tên": st.column_config.TextColumn(
                                 "Họ tên",
@@ -3675,8 +3683,14 @@ with tab3:
                             ),
                             "Hình ảnh": st.column_config.ImageColumn(
                                 "Hình ảnh",
-                                help="Ảnh minh chứng chuyển khoản do thành viên tải lên.",
-                                width="medium"
+                                help="Ảnh minh chứng chuyển khoản.",
+                                width="small"
+                            ),
+                            "Xem lớn": st.column_config.LinkColumn(
+                                "Xem",
+                                help="Bấm để mở ảnh kích thước lớn.",
+                                display_text="🔍 Phóng lớn",
+                                width="small"
                             ),
                             "Trạng thái": st.column_config.TextColumn(
                                 "Trạng thái",
