@@ -5,6 +5,7 @@ from collections import defaultdict
 import pandas as pd
 from pathlib import Path as FilePath
 import uuid
+import re
 
 try:
     from supabase import create_client
@@ -1303,12 +1304,77 @@ def load_member_accounts_admin():
     return {int(r["member_id"]): r for r in (result.data or [])}
 
 
+def _parse_payment_cutoff(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def _order_created_at(row):
+    value = row.get("created_at")
+    if value:
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except Exception:
+            pass
+
+    # Fallback nếu bản ghi cũ không có created_at.
+    try:
+        d = datetime.fromisoformat(str(row.get("order_date")))
+        return d.replace(tzinfo=timezone(timedelta(hours=7))).astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def calculate_outstanding_amount(member_name, year, month, payment=None, order_rows=None):
+    """Tính số tiền phát sinh SAU thời điểm xác nhận gần nhất trong tháng."""
+    if order_rows is None:
+        order_rows = load_orders_by_month(int(year), int(month))
+
+    payment = payment or {}
+    cutoff = _parse_payment_cutoff(
+        payment.get("paid_through_at") or payment.get("received_at")
+    )
+
+    total = 0
+    for r in order_rows:
+        if str(r.get("customer_name", "")).strip() != member_name.strip():
+            continue
+
+        created_at = _order_created_at(r)
+        if cutoff is not None and created_at is not None and created_at <= cutoff:
+            continue
+
+        total += int(r.get("unit_price", 0) or 0) * int(r.get("quantity", 0) or 0)
+
+    return total
+
+
 def get_member_amount_due(member_name, year, month):
-    rows = load_orders_by_month(int(year), int(month))
-    return sum(
-        int(r.get("unit_price", 0) or 0) * int(r.get("quantity", 0) or 0)
-        for r in rows
-        if str(r.get("customer_name", "")).strip() == member_name.strip()
+    payment = None
+    if supabase is not None:
+        try:
+            result = (
+                supabase.table("monthly_payments")
+                .select("*")
+                .eq("member_name", member_name.strip())
+                .eq("payment_year", int(year))
+                .eq("payment_month", int(month))
+                .limit(1)
+                .execute()
+            )
+            payment = (result.data or [None])[0]
+        except Exception:
+            payment = None
+
+    return calculate_outstanding_amount(
+        member_name,
+        int(year),
+        int(month),
+        payment=payment,
     )
 
 
@@ -1470,14 +1536,16 @@ def load_monthly_payments(year, month):
 
 
 def save_monthly_payment(member_id, member_name, year, month, amount_due, paid):
-    """Lưu trạng thái thanh toán theo tháng.
+    """Lưu xác nhận thanh toán theo thời điểm.
 
-    - Chưa thanh toán: paid = False, received_at = NULL
-    - Đã thanh toán: paid = True, received_at tự lấy thời điểm hệ thống hiện hành
+    Khi quản trị viên bấm Đã thanh toán:
+    - ghi received_at = thời điểm hiện tại;
+    - ghi paid_through_at = thời điểm hiện tại;
+    - từ sau thời điểm đó, các đơn mới trong cùng tháng sẽ được tính thành khoản mới.
     """
     existing = (
         supabase.table("monthly_payments")
-        .select("id,paid,received_at")
+        .select("*")
         .eq("member_id", int(member_id))
         .eq("payment_year", int(year))
         .eq("payment_month", int(month))
@@ -1486,16 +1554,18 @@ def save_monthly_payment(member_id, member_name, year, month, amount_due, paid):
     )
 
     now_iso = datetime.now(timezone.utc).isoformat()
+    existing_row = existing.data[0] if existing.data else {}
 
-    # Nếu đang chuyển từ chưa thanh toán -> đã thanh toán,
-    # tự động lấy ngày giờ hệ thống hiện hành.
-    # Nếu đã thanh toán từ trước thì giữ nguyên ngày xác nhận cũ.
-    received_at = None
+    received_at = existing_row.get("received_at")
+    paid_through_at = existing_row.get("paid_through_at")
+
     if paid:
-        if existing.data and existing.data[0].get("paid") and existing.data[0].get("received_at"):
-            received_at = existing.data[0]["received_at"]
-        else:
-            received_at = now_iso
+        # Mỗi lần xác nhận một khoản phát sinh mới, chốt đến đúng thời điểm bấm Cập nhật.
+        received_at = now_iso
+        paid_through_at = now_iso
+    elif not existing_row:
+        received_at = None
+        paid_through_at = None
 
     payload = {
         "member_id": int(member_id),
@@ -1506,6 +1576,7 @@ def save_monthly_payment(member_id, member_name, year, month, amount_due, paid):
         "paid": bool(paid),
         "payment_method": "Chuyển khoản" if paid else None,
         "received_at": received_at,
+        "paid_through_at": paid_through_at,
         "updated_at": now_iso,
     }
 
@@ -1718,11 +1789,17 @@ def update_order_dish(order_id, old_dish_name, dish_name, unit_price, current_no
     new_name = str(dish_name or "").strip()
     existing_note = str(current_note or "").strip()
 
+    parts = [p.strip() for p in existing_note.split("|") if p.strip()]
+    customer_notes = []
+
+    for part in parts:
+        if not re.search(r"^.+\s+thay bằng\s+.+$", part, flags=re.IGNORECASE):
+            customer_notes.append(part)
+
     replacement_note = f"{old_name} thay bằng {new_name}"
 
-    # Giữ ghi chú cũ của người đặt (nếu có) và thêm thông báo đổi món.
-    if existing_note and replacement_note.lower() not in existing_note.lower():
-        updated_note = f"{existing_note} | {replacement_note}"
+    if customer_notes:
+        updated_note = " | ".join(customer_notes + [replacement_note])
     else:
         updated_note = replacement_note
 
@@ -2049,15 +2126,18 @@ if member_tab is not None:
                     member_id, int(member_year), month_no
                 ) or {}
 
-                if payment.get("paid"):
+                paid_cutoff = payment.get("paid_through_at") or payment.get("received_at")
+                is_settled_now = bool(paid_cutoff) and amount_due == 0
+
+                if is_settled_now:
                     status_icon = "✅"
                     status_short = "Đã thanh toán"
                 elif payment.get("proof_path"):
                     status_icon = "🧾"
-                    status_short = "Đã gửi hình - chờ xác nhận"
+                    status_short = "Có phát sinh mới / chờ xác nhận"
                 else:
                     status_icon = "⏳"
-                    status_short = "Chưa gửi minh chứng"
+                    status_short = "Chưa thanh toán"
 
                 # Mở sẵn tháng hiện tại để người dùng thao tác nhanh.
                 default_open = (
@@ -2079,9 +2159,21 @@ if member_tab is not None:
                         )
 
                     with c_status:
-                        if payment.get("paid"):
+                        if is_settled_now:
+                            cutoff_dt = _parse_payment_cutoff(paid_cutoff)
+                            cutoff_text = ""
+                            if cutoff_dt:
+                                cutoff_text = cutoff_dt.astimezone(
+                                    timezone(timedelta(hours=7))
+                                ).strftime("%d/%m/%Y %H:%M")
                             st.success(
-                                "✅ Quản trị viên đã xác nhận nhận được chuyển khoản."
+                                "✅ Đã thanh toán"
+                                + (f" đến {cutoff_text}." if cutoff_text else ".")
+                            )
+                        elif paid_cutoff and amount_due > 0:
+                            st.warning(
+                                f"🟡 Có phát sinh mới sau lần thanh toán trước. "
+                                f"Số tiền cần thanh toán tiếp: {money(amount_due)}"
                             )
                         elif payment.get("proof_path"):
                             st.warning(
@@ -2101,7 +2193,7 @@ if member_tab is not None:
                             width=320
                         )
 
-                    if payment.get("proof_path") and not payment.get("paid"):
+                    if payment.get("proof_path") and not is_settled_now:
                         st.caption(
                             "Nếu tải nhầm hình, bạn có thể chọn hình mới để thay thế "
                             "hoặc xóa hình hiện tại."
@@ -2130,7 +2222,7 @@ if member_tab is not None:
                             button_label,
                             type="primary",
                             use_container_width=True,
-                            disabled=bool(payment.get("paid")),
+                            disabled=bool(is_settled_now),
                             key=f"upload_proof_btn_{member_id}_{member_year}_{month_no}"
                         ):
                             try:
@@ -2186,7 +2278,7 @@ if member_tab is not None:
                             if st.button(
                                 f"🗑️ Xóa hình",
                                 use_container_width=True,
-                                disabled=bool(payment.get("paid")),
+                                disabled=bool(is_settled_now),
                                 key=f"delete_proof_btn_{member_id}_{member_year}_{month_no}"
                             ):
                                 try:
@@ -2205,7 +2297,7 @@ if member_tab is not None:
                                     st.error("Không xóa được hình chuyển khoản.")
                                     st.caption(str(e))
 
-                    if payment.get("paid"):
+                    if is_settled_now:
                         st.caption(
                             "🔒 Tháng này đã được quản trị viên xác nhận thanh toán, "
                             "nên hình chuyển khoản đã được khóa."
@@ -3142,7 +3234,7 @@ with tab3:
             st.markdown("### 💳 Tình trạng chuyển khoản")
             st.caption(
                 "Quản trị viên xác nhận sau khi thực tế nhận được tiền chuyển khoản. "
-                "Khi chuyển sang Đã thanh toán và bấm Cập nhật, ngày xác nhận sẽ tự động lấy ngày hiện hành của hệ thống."
+                "Khi chuyển sang Đã thanh toán và bấm Cập nhật, hệ thống chốt tiền đến đúng thời điểm đó. Các đơn phát sinh sau thời điểm chốt sẽ được tính thành khoản cần thanh toán tiếp trong cùng tháng."
             )
 
             # ---------------- QR CHUYỂN KHOẢN - CARD GIỮA TRANG ----------------
@@ -3263,19 +3355,28 @@ with tab3:
             ):
                 member_id = member_id_by_name.get(member_name)
                 payment = payment_map.get(member_id, {}) if member_id is not None else {}
-                is_paid = bool(payment.get("paid", False))
-                received_at = payment.get("received_at")
+
+                outstanding = calculate_outstanding_amount(
+                    member_name,
+                    int(selected_year),
+                    int(selected_month),
+                    payment=payment,
+                    order_rows=rows,
+                )
+
+                paid_cutoff = payment.get("paid_through_at") or payment.get("received_at")
+                is_paid = bool(paid_cutoff) and outstanding == 0
 
                 received_text = "—"
-                if received_at:
+                if paid_cutoff:
                     try:
                         received_text = datetime.fromisoformat(
-                            received_at.replace("Z", "+00:00")
+                            str(paid_cutoff).replace("Z", "+00:00")
                         ).astimezone(
                             timezone(timedelta(hours=7))
-                        ).strftime("%d/%m/%Y")
+                        ).strftime("%d/%m/%Y %H:%M")
                     except Exception:
-                        received_text = str(received_at)
+                        received_text = str(paid_cutoff)
 
                 status_text = "🟢 Đã thanh toán" if is_paid else "🟡 Chưa thanh toán"
 
@@ -3283,16 +3384,17 @@ with tab3:
 
                 payment_rows.append({
                     "Họ tên": member_name,
-                    "Số tiền tháng": money(info["total"]),
+                    "Cần thanh toán": money(outstanding),
                     "Hình ảnh": proof_url or "",
                     "Trạng thái": status_text,
-                    "Ngày xác nhận": received_text,
+                    "Đã thanh toán đến": received_text,
                 })
 
                 payment_meta[member_name] = {
                     "member_id": member_id,
-                    "amount_due": int(info["total"]),
+                    "amount_due": int(outstanding),
                     "old_paid": is_paid,
+                    "paid_cutoff": paid_cutoff,
                 }
 
             if payment_rows:
@@ -3314,7 +3416,7 @@ with tab3:
                     # Trong chế độ quản trị, hiển thị ảnh trực tiếp ngay trong
                     # cột "Hình ảnh", giống bảng mà thành viên/người xem công khai thấy.
                     payment_df_for_edit = payment_df[
-                        ["Họ tên", "Số tiền tháng", "Hình ảnh", "Trạng thái", "Ngày xác nhận"]
+                        ["Họ tên", "Cần thanh toán", "Hình ảnh", "Trạng thái", "Đã thanh toán đến"]
                     ].copy()
 
                     edited_payment_df = st.data_editor(
@@ -3324,16 +3426,16 @@ with tab3:
                         row_height=110,
                         disabled=[
                             "Họ tên",
-                            "Số tiền tháng",
+                            "Cần thanh toán",
                             "Hình ảnh",
-                            "Ngày xác nhận"
+                            "Đã thanh toán đến"
                         ],
                         column_config={
                             "Họ tên": st.column_config.TextColumn(
                                 "Họ tên",
                                 width="medium"
                             ),
-                            "Số tiền tháng": st.column_config.TextColumn(
+                            "Cần thanh toán": st.column_config.TextColumn(
                                 "Số tiền tháng",
                                 width="small"
                             ),
@@ -3348,9 +3450,9 @@ with tab3:
                                 required=True,
                                 width="medium"
                             ),
-                            "Ngày xác nhận": st.column_config.TextColumn(
-                                "Ngày xác nhận",
-                                help="Tự động cập nhật theo ngày hệ thống khi bấm Cập nhật.",
+                            "Đã thanh toán đến": st.column_config.TextColumn(
+                                "Đã thanh toán đến",
+                                help="Mốc thời gian gần nhất quản trị viên đã xác nhận thanh toán.",
                                 width="small"
                             ),
                         },
@@ -3482,7 +3584,7 @@ with tab3:
                     st.caption(
                         "💡 Sau khi kiểm tra hình chuyển khoản và đổi trạng thái, "
                         "bấm nút Cập nhật bên dưới để lưu. "
-                        "Ngày xác nhận chỉ được ghi khi trạng thái là 🟢 Đã thanh toán."
+                        "Mốc “Đã thanh toán đến” được ghi đúng thời điểm xác nhận. Các đơn đặt sau mốc này sẽ tự động cộng vào khoản cần thanh toán tiếp."
                     )
 
                     if st.button(
@@ -3503,13 +3605,19 @@ with tab3:
 
                                 new_paid = edited_row["Trạng thái"] == "🟢 Đã thanh toán"
 
-                                # Chỉ ghi khi trạng thái có thay đổi, hoặc chưa có bản ghi.
+                                # Nếu người này đang có khoản phát sinh mới và quản trị viên
+                                # chọn Đã thanh toán, luôn tạo mốc chốt mới ngay tại thời điểm bấm.
                                 existing_payment = payment_map.get(meta["member_id"])
-                                if (
+                                should_save = (
                                     existing_payment is None
-                                    or bool(existing_payment.get("paid", False)) != new_paid
-                                    or int(existing_payment.get("amount_due", 0) or 0) != meta["amount_due"]
-                                ):
+                                    or meta["old_paid"] != new_paid
+                                    or (
+                                        new_paid
+                                        and meta["amount_due"] > 0
+                                    )
+                                )
+
+                                if should_save:
                                     save_monthly_payment(
                                         meta["member_id"],
                                         member_name,
@@ -3537,7 +3645,7 @@ with tab3:
                 else:
                     # Bảng công khai hiển thị trực tiếp ảnh trong cột Hình ảnh.
                     public_payment_df = payment_df[
-                        ["Họ tên", "Số tiền tháng", "Hình ảnh", "Trạng thái", "Ngày xác nhận"]
+                        ["Họ tên", "Cần thanh toán", "Hình ảnh", "Trạng thái", "Đã thanh toán đến"]
                     ].copy()
 
                     st.dataframe(
@@ -3550,7 +3658,7 @@ with tab3:
                                 "Họ tên",
                                 width="medium"
                             ),
-                            "Số tiền tháng": st.column_config.TextColumn(
+                            "Cần thanh toán": st.column_config.TextColumn(
                                 "Số tiền tháng",
                                 width="small"
                             ),
@@ -3563,7 +3671,7 @@ with tab3:
                                 "Trạng thái",
                                 width="medium"
                             ),
-                            "Ngày xác nhận": st.column_config.TextColumn(
+                            "Đã thanh toán đến": st.column_config.TextColumn(
                                 "Ngày xác nhận",
                                 width="small"
                             ),
