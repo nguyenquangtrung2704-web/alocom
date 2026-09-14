@@ -1535,7 +1535,7 @@ def load_monthly_payments(year, month):
     return {int(r["member_id"]): r for r in (result.data or [])}
 
 
-def save_monthly_payment(member_id, member_name, year, month, amount_due, paid):
+def save_monthly_payment(member_id, member_name, year, month, amount_due, paid, payment_note=""):
     """Lưu xác nhận thanh toán theo thời điểm.
 
     Khi quản trị viên bấm Đã thanh toán:
@@ -1575,6 +1575,7 @@ def save_monthly_payment(member_id, member_name, year, month, amount_due, paid):
         "amount_due": int(amount_due),
         "paid": bool(paid),
         "payment_method": "Chuyển khoản" if paid else None,
+        "payment_note": str(payment_note or "").strip(),
         "received_at": received_at,
         "paid_through_at": paid_through_at,
         "updated_at": now_iso,
@@ -3387,6 +3388,7 @@ with tab3:
                     "Cần thanh toán": money(outstanding),
                     "Hình ảnh": proof_url or "",
                     "Trạng thái": status_text,
+                    "Ghi chú": str(payment.get("payment_note") or ""),
                     "Đã thanh toán đến": received_text,
                 })
 
@@ -3394,6 +3396,7 @@ with tab3:
                     "member_id": member_id,
                     "amount_due": int(outstanding),
                     "old_paid": is_paid,
+                    "old_note": str(payment.get("payment_note") or ""),
                     "paid_cutoff": paid_cutoff,
                 }
 
@@ -3416,7 +3419,7 @@ with tab3:
                     # Trong chế độ quản trị, hiển thị ảnh trực tiếp ngay trong
                     # cột "Hình ảnh", giống bảng mà thành viên/người xem công khai thấy.
                     payment_df_for_edit = payment_df[
-                        ["Họ tên", "Cần thanh toán", "Hình ảnh", "Trạng thái", "Đã thanh toán đến"]
+                        ["Họ tên", "Cần thanh toán", "Hình ảnh", "Trạng thái", "Ghi chú", "Đã thanh toán đến"]
                     ].copy()
 
                     edited_payment_df = st.data_editor(
@@ -3448,6 +3451,11 @@ with tab3:
                                 "Trạng thái",
                                 options=["🟡 Chưa thanh toán", "🟢 Đã thanh toán"],
                                 required=True,
+                                width="medium"
+                            ),
+                            "Ghi chú": st.column_config.TextColumn(
+                                "Ghi chú",
+                                help="Ví dụ: Nhận tiền mặt",
                                 width="medium"
                             ),
                             "Đã thanh toán đến": st.column_config.TextColumn(
@@ -3584,7 +3592,7 @@ with tab3:
                     st.caption(
                         "💡 Sau khi kiểm tra hình chuyển khoản và đổi trạng thái, "
                         "bấm nút Cập nhật bên dưới để lưu. "
-                        "Mốc “Đã thanh toán đến” được ghi đúng thời điểm xác nhận. Các đơn đặt sau mốc này sẽ tự động cộng vào khoản cần thanh toán tiếp."
+                        "Mốc “Đã thanh toán đến” được ghi đúng thời điểm xác nhận. Nếu nhận tiền mặt, nhập “Nhận tiền mặt” ở cột Ghi chú rồi bấm Cập nhật. Các đơn đặt sau mốc này sẽ tự động cộng vào khoản cần thanh toán tiếp."
                     )
 
                     if st.button(
@@ -3604,6 +3612,7 @@ with tab3:
                                     continue
 
                                 new_paid = edited_row["Trạng thái"] == "🟢 Đã thanh toán"
+                                new_note = str(edited_row.get("Ghi chú", "") or "").strip()
 
                                 # Nếu người này đang có khoản phát sinh mới và quản trị viên
                                 # chọn Đã thanh toán, luôn tạo mốc chốt mới ngay tại thời điểm bấm.
@@ -3611,6 +3620,7 @@ with tab3:
                                 should_save = (
                                     existing_payment is None
                                     or meta["old_paid"] != new_paid
+                                    or meta.get("old_note", "") != new_note
                                     or (
                                         new_paid
                                         and meta["amount_due"] > 0
@@ -3625,6 +3635,7 @@ with tab3:
                                         int(selected_month),
                                         meta["amount_due"],
                                         new_paid,
+                                        new_note,
                                     )
                                     changed_count += 1
 
@@ -3645,7 +3656,7 @@ with tab3:
                 else:
                     # Bảng công khai hiển thị trực tiếp ảnh trong cột Hình ảnh.
                     public_payment_df = payment_df[
-                        ["Họ tên", "Cần thanh toán", "Hình ảnh", "Trạng thái", "Đã thanh toán đến"]
+                        ["Họ tên", "Cần thanh toán", "Hình ảnh", "Trạng thái", "Ghi chú", "Đã thanh toán đến"]
                     ].copy()
 
                     st.dataframe(
@@ -3669,6 +3680,10 @@ with tab3:
                             ),
                             "Trạng thái": st.column_config.TextColumn(
                                 "Trạng thái",
+                                width="medium"
+                            ),
+                            "Ghi chú": st.column_config.TextColumn(
+                                "Ghi chú",
                                 width="medium"
                             ),
                             "Đã thanh toán đến": st.column_config.TextColumn(
