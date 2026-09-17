@@ -3418,7 +3418,8 @@ with tab3:
                     "Hình ảnh": proof_url or "",
                     "Xem lớn": proof_url or "",
                     "Trạng thái": status_text,
-                    "Tiền giảm": int(payment.get("discount_amount", 0) or 0),
+                    "Tiền giảm": 0,
+                    "Chú thích": "",
                     "Ghi chú": str(payment.get("payment_note") or ""),
                     "Đã thanh toán đến": received_text,
                 })
@@ -3451,7 +3452,7 @@ with tab3:
                     # Trong chế độ quản trị, hiển thị ảnh trực tiếp ngay trong
                     # cột "Hình ảnh", giống bảng mà thành viên/người xem công khai thấy.
                     payment_df_for_edit = payment_df[
-                        ["Họ tên", "Cần thanh toán", "Hình ảnh", "Xem lớn", "Trạng thái", "Tiền giảm", "Ghi chú", "Đã thanh toán đến"]
+                        ["Họ tên", "Cần thanh toán", "Hình ảnh", "Xem lớn", "Trạng thái", "Tiền giảm", "Chú thích", "Ghi chú", "Đã thanh toán đến"]
                     ].copy()
 
                     edited_payment_df = st.data_editor(
@@ -3464,6 +3465,7 @@ with tab3:
                             "Cần thanh toán",
                             "Hình ảnh",
                             "Xem lớn",
+                            "Ghi chú",
                             "Đã thanh toán đến"
                         ],
                         column_config={
@@ -3494,15 +3496,20 @@ with tab3:
                             ),
                             "Tiền giảm": st.column_config.NumberColumn(
                                 "Tiền giảm",
-                                help="Nhập số tiền được giảm, ví dụ 5000.",
+                                help="Nhập khoản giảm MỚI. Sau khi Cập nhật ô này sẽ trở về 0.",
                                 min_value=0,
                                 step=1000,
                                 format="%d đ",
                                 width="small"
                             ),
+                            "Chú thích": st.column_config.TextColumn(
+                                "Chú thích",
+                                help="Nhập lý do cho khoản giảm mới. Nếu nhận tiền mặt, có thể nhập: Nhận tiền mặt.",
+                                width="large"
+                            ),
                             "Ghi chú": st.column_config.TextColumn(
                                 "Ghi chú",
-                                help="Ghi lý do giảm, ví dụ: Cơm khổ qua giảm 5.000đ vì trái khổ qua hôm nay nhỏ.",
+                                help="Hệ thống tự lưu lịch sử giảm giá. Khi xác nhận thanh toán, nội dung này được thay bằng thời gian nhận tiền.",
                                 width="large"
                             ),
                             "Đã thanh toán đến": st.column_config.TextColumn(
@@ -3639,7 +3646,7 @@ with tab3:
                     st.caption(
                         "💡 Sau khi kiểm tra hình chuyển khoản và đổi trạng thái, "
                         "bấm nút Cập nhật bên dưới để lưu. "
-                        "Mốc “Đã thanh toán đến” được ghi đúng thời điểm xác nhận. Nếu có giảm giá, nhập số tiền ở cột “Tiền giảm” và ghi rõ lý do ở cột “Ghi chú”. Nếu nhận tiền mặt, nhập “Nhận tiền mặt” ở cột Ghi chú rồi bấm Cập nhật. Các đơn đặt sau mốc này sẽ tự động cộng vào khoản cần thanh toán tiếp."
+                        "Mỗi lần giảm giá: nhập số tiền ở “Tiền giảm” và lý do ở “Chú thích”, rồi bấm Cập nhật. Hệ thống sẽ cộng khoản giảm và tự thêm một dòng vào “Ghi chú”; hai ô nhập sẽ trắng lại. Khi chuyển sang 🟢 Đã thanh toán, “Ghi chú” sẽ được thay bằng ngày giờ nhận tiền. Nếu nhận tiền mặt, nhập “Nhận tiền mặt” ở ô Chú thích trước khi bấm Cập nhật."
                     )
 
                     if st.button(
@@ -3659,11 +3666,45 @@ with tab3:
                                     continue
 
                                 new_paid = edited_row["Trạng thái"] == "🟢 Đã thanh toán"
-                                new_note = str(edited_row.get("Ghi chú", "") or "").strip()
+                                annotation = str(edited_row.get("Chú thích", "") or "").strip()
                                 try:
-                                    new_discount = max(0, int(edited_row.get("Tiền giảm", 0) or 0))
+                                    added_discount = max(0, int(edited_row.get("Tiền giảm", 0) or 0))
                                 except (TypeError, ValueError):
-                                    new_discount = 0
+                                    added_discount = 0
+
+                                old_note = meta.get("old_note", "")
+                                old_discount = int(meta.get("old_discount", 0) or 0)
+                                new_discount = old_discount
+                                new_note = old_note
+                                old_note_is_receipt = (
+                                    old_note.startswith("Đã nhận chuyển khoản lúc ")
+                                    or old_note.startswith("Đã nhận tiền mặt lúc ")
+                                )
+
+                                if added_discount > 0:
+                                    new_discount = old_discount + added_discount
+                                    detail = annotation if annotation else "Không có chú thích"
+                                    discount_line = f"Giảm {money(added_discount)}: {detail}"
+                                    if old_note_is_receipt:
+                                        new_note = discount_line
+                                    elif old_note:
+                                        new_note = old_note + "\n" + discount_line
+                                    else:
+                                        new_note = discount_line
+
+                                cash_hint = (
+                                    "tiền mặt" in annotation.lower()
+                                    or "tiền mặt" in old_note.lower()
+                                )
+
+                                if new_paid:
+                                    now_vn = datetime.now(
+                                        timezone(timedelta(hours=7))
+                                    ).strftime("%d/%m/%Y %H:%M")
+                                    if cash_hint:
+                                        new_note = f"Đã nhận tiền mặt lúc {now_vn}"
+                                    else:
+                                        new_note = f"Đã nhận chuyển khoản lúc {now_vn}"
 
                                 # Nếu người này đang có khoản phát sinh mới và quản trị viên
                                 # chọn Đã thanh toán, luôn tạo mốc chốt mới ngay tại thời điểm bấm.
@@ -3671,8 +3712,8 @@ with tab3:
                                 should_save = (
                                     existing_payment is None
                                     or meta["old_paid"] != new_paid
-                                    or meta.get("old_note", "") != new_note
-                                    or meta.get("old_discount", 0) != new_discount
+                                    or added_discount > 0
+                                    or bool(annotation)
                                     or (
                                         new_paid
                                         and meta["amount_due"] > 0
@@ -3709,7 +3750,7 @@ with tab3:
                 else:
                     # Bảng công khai hiển thị trực tiếp ảnh trong cột Hình ảnh.
                     public_payment_df = payment_df[
-                        ["Họ tên", "Cần thanh toán", "Hình ảnh", "Xem lớn", "Trạng thái", "Tiền giảm", "Ghi chú", "Đã thanh toán đến"]
+                        ["Họ tên", "Cần thanh toán", "Hình ảnh", "Xem lớn", "Trạng thái", "Ghi chú", "Đã thanh toán đến"]
                     ].copy()
 
                     st.dataframe(
