@@ -1350,6 +1350,23 @@ def calculate_outstanding_amount(member_name, year, month, payment=None, order_r
 
         total += int(r.get("unit_price", 0) or 0) * int(r.get("quantity", 0) or 0)
 
+    discount_amount = int(payment.get("discount_amount", 0) or 0)
+    discount_applied_at = _parse_payment_cutoff(payment.get("discount_applied_at"))
+
+    # Chỉ trừ khoản giảm đang áp dụng cho đợt thanh toán hiện tại.
+    # Nếu khoản giảm đã được dùng ở lần chốt trước thì không trừ lại cho đơn mới.
+    discount_is_current = (
+        discount_amount > 0
+        and (
+            discount_applied_at is None
+            or cutoff is None
+            or discount_applied_at > cutoff
+        )
+    )
+
+    if discount_is_current:
+        total = max(0, total - discount_amount)
+
     return total
 
 
@@ -1535,7 +1552,7 @@ def load_monthly_payments(year, month):
     return {int(r["member_id"]): r for r in (result.data or [])}
 
 
-def save_monthly_payment(member_id, member_name, year, month, amount_due, paid, payment_note=""):
+def save_monthly_payment(member_id, member_name, year, month, amount_due, paid, payment_note="", discount_amount=0):
     """Lưu xác nhận thanh toán theo thời điểm.
 
     Khi quản trị viên bấm Đã thanh toán:
@@ -1558,11 +1575,21 @@ def save_monthly_payment(member_id, member_name, year, month, amount_due, paid, 
 
     received_at = existing_row.get("received_at")
     paid_through_at = existing_row.get("paid_through_at")
+    old_discount = int(existing_row.get("discount_amount", 0) or 0)
+    discount_applied_at = existing_row.get("discount_applied_at")
+    discount_amount = max(0, int(discount_amount or 0))
+
+    # Nếu quản trị viên thay đổi số tiền giảm thì đây là khoản giảm mới
+    # dành cho đợt thanh toán hiện tại.
+    if discount_amount != old_discount:
+        discount_applied_at = None
 
     if paid:
         # Mỗi lần xác nhận một khoản phát sinh mới, chốt đến đúng thời điểm bấm Cập nhật.
         received_at = now_iso
         paid_through_at = now_iso
+        if discount_amount > 0:
+            discount_applied_at = now_iso
     elif not existing_row:
         received_at = None
         paid_through_at = None
@@ -1576,6 +1603,8 @@ def save_monthly_payment(member_id, member_name, year, month, amount_due, paid, 
         "paid": bool(paid),
         "payment_method": "Chuyển khoản" if paid else None,
         "payment_note": str(payment_note or "").strip(),
+        "discount_amount": discount_amount,
+        "discount_applied_at": discount_applied_at,
         "received_at": received_at,
         "paid_through_at": paid_through_at,
         "updated_at": now_iso,
@@ -3389,6 +3418,7 @@ with tab3:
                     "Hình ảnh": proof_url or "",
                     "Xem lớn": proof_url or "",
                     "Trạng thái": status_text,
+                    "Tiền giảm": int(payment.get("discount_amount", 0) or 0),
                     "Ghi chú": str(payment.get("payment_note") or ""),
                     "Đã thanh toán đến": received_text,
                 })
@@ -3398,6 +3428,7 @@ with tab3:
                     "amount_due": int(outstanding),
                     "old_paid": is_paid,
                     "old_note": str(payment.get("payment_note") or ""),
+                    "old_discount": int(payment.get("discount_amount", 0) or 0),
                     "paid_cutoff": paid_cutoff,
                 }
 
@@ -3420,7 +3451,7 @@ with tab3:
                     # Trong chế độ quản trị, hiển thị ảnh trực tiếp ngay trong
                     # cột "Hình ảnh", giống bảng mà thành viên/người xem công khai thấy.
                     payment_df_for_edit = payment_df[
-                        ["Họ tên", "Cần thanh toán", "Hình ảnh", "Xem lớn", "Trạng thái", "Ghi chú", "Đã thanh toán đến"]
+                        ["Họ tên", "Cần thanh toán", "Hình ảnh", "Xem lớn", "Trạng thái", "Tiền giảm", "Ghi chú", "Đã thanh toán đến"]
                     ].copy()
 
                     edited_payment_df = st.data_editor(
@@ -3461,10 +3492,18 @@ with tab3:
                                 required=True,
                                 width="medium"
                             ),
+                            "Tiền giảm": st.column_config.NumberColumn(
+                                "Tiền giảm",
+                                help="Nhập số tiền được giảm, ví dụ 5000.",
+                                min_value=0,
+                                step=1000,
+                                format="%d đ",
+                                width="small"
+                            ),
                             "Ghi chú": st.column_config.TextColumn(
                                 "Ghi chú",
-                                help="Ví dụ: Nhận tiền mặt",
-                                width="medium"
+                                help="Ghi lý do giảm, ví dụ: Cơm khổ qua giảm 5.000đ vì trái khổ qua hôm nay nhỏ.",
+                                width="large"
                             ),
                             "Đã thanh toán đến": st.column_config.TextColumn(
                                 "Đã thanh toán đến",
@@ -3600,7 +3639,7 @@ with tab3:
                     st.caption(
                         "💡 Sau khi kiểm tra hình chuyển khoản và đổi trạng thái, "
                         "bấm nút Cập nhật bên dưới để lưu. "
-                        "Mốc “Đã thanh toán đến” được ghi đúng thời điểm xác nhận. Nếu nhận tiền mặt, nhập “Nhận tiền mặt” ở cột Ghi chú rồi bấm Cập nhật. Các đơn đặt sau mốc này sẽ tự động cộng vào khoản cần thanh toán tiếp."
+                        "Mốc “Đã thanh toán đến” được ghi đúng thời điểm xác nhận. Nếu có giảm giá, nhập số tiền ở cột “Tiền giảm” và ghi rõ lý do ở cột “Ghi chú”. Nếu nhận tiền mặt, nhập “Nhận tiền mặt” ở cột Ghi chú rồi bấm Cập nhật. Các đơn đặt sau mốc này sẽ tự động cộng vào khoản cần thanh toán tiếp."
                     )
 
                     if st.button(
@@ -3621,6 +3660,10 @@ with tab3:
 
                                 new_paid = edited_row["Trạng thái"] == "🟢 Đã thanh toán"
                                 new_note = str(edited_row.get("Ghi chú", "") or "").strip()
+                                try:
+                                    new_discount = max(0, int(edited_row.get("Tiền giảm", 0) or 0))
+                                except (TypeError, ValueError):
+                                    new_discount = 0
 
                                 # Nếu người này đang có khoản phát sinh mới và quản trị viên
                                 # chọn Đã thanh toán, luôn tạo mốc chốt mới ngay tại thời điểm bấm.
@@ -3629,6 +3672,7 @@ with tab3:
                                     existing_payment is None
                                     or meta["old_paid"] != new_paid
                                     or meta.get("old_note", "") != new_note
+                                    or meta.get("old_discount", 0) != new_discount
                                     or (
                                         new_paid
                                         and meta["amount_due"] > 0
@@ -3644,6 +3688,7 @@ with tab3:
                                         meta["amount_due"],
                                         new_paid,
                                         new_note,
+                                        new_discount,
                                     )
                                     changed_count += 1
 
@@ -3664,7 +3709,7 @@ with tab3:
                 else:
                     # Bảng công khai hiển thị trực tiếp ảnh trong cột Hình ảnh.
                     public_payment_df = payment_df[
-                        ["Họ tên", "Cần thanh toán", "Hình ảnh", "Xem lớn", "Trạng thái", "Ghi chú", "Đã thanh toán đến"]
+                        ["Họ tên", "Cần thanh toán", "Hình ảnh", "Xem lớn", "Trạng thái", "Tiền giảm", "Ghi chú", "Đã thanh toán đến"]
                     ].copy()
 
                     st.dataframe(
@@ -3696,9 +3741,15 @@ with tab3:
                                 "Trạng thái",
                                 width="medium"
                             ),
+                            "Tiền giảm": st.column_config.NumberColumn(
+                                "Tiền giảm",
+                                min_value=0,
+                                format="%d đ",
+                                width="small"
+                            ),
                             "Ghi chú": st.column_config.TextColumn(
                                 "Ghi chú",
-                                width="medium"
+                                width="large"
                             ),
                             "Đã thanh toán đến": st.column_config.TextColumn(
                                 "Ngày xác nhận",
