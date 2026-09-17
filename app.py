@@ -6,6 +6,8 @@ import pandas as pd
 from pathlib import Path as FilePath
 import uuid
 import re
+import html as html_lib
+import streamlit.components.v1 as components
 
 try:
     from supabase import create_client
@@ -3748,59 +3750,194 @@ with tab3:
                             st.caption(str(e))
 
                 else:
-                    # Bảng công khai hiển thị trực tiếp ảnh trong cột Hình ảnh.
+                    # Bảng công khai: chỉ dùng cột Hình ảnh. Ảnh hiển thị thumbnail nhỏ;
+                    # double-click trực tiếp vào ảnh để mở lớp xem ảnh lớn.
                     public_payment_df = payment_df[
-                        ["Họ tên", "Cần thanh toán", "Hình ảnh", "Xem lớn", "Trạng thái", "Ghi chú", "Đã thanh toán đến"]
+                        ["Họ tên", "Cần thanh toán", "Hình ảnh", "Trạng thái", "Ghi chú", "Đã thanh toán đến"]
                     ].copy()
 
-                    st.dataframe(
-                        public_payment_df,
-                        use_container_width=True,
-                        hide_index=True,
-                        row_height=68,
-                        column_config={
-                            "Họ tên": st.column_config.TextColumn(
-                                "Họ tên",
-                                width="medium"
-                            ),
-                            "Cần thanh toán": st.column_config.TextColumn(
-                                "Số tiền tháng",
-                                width="small"
-                            ),
-                            "Hình ảnh": st.column_config.ImageColumn(
-                                "Hình ảnh",
-                                help="Ảnh minh chứng chuyển khoản.",
-                                width="small"
-                            ),
-                            "Xem lớn": st.column_config.LinkColumn(
-                                "Xem",
-                                help="Bấm để mở ảnh kích thước lớn.",
-                                display_text="🔍 Phóng lớn",
-                                width="small"
-                            ),
-                            "Trạng thái": st.column_config.TextColumn(
-                                "Trạng thái",
-                                width="medium"
-                            ),
-                            "Tiền giảm": st.column_config.NumberColumn(
-                                "Tiền giảm",
-                                min_value=0,
-                                format="%d đ",
-                                width="small"
-                            ),
-                            "Ghi chú": st.column_config.TextColumn(
-                                "Ghi chú",
-                                width="large"
-                            ),
-                            "Đã thanh toán đến": st.column_config.TextColumn(
-                                "Ngày xác nhận",
-                                width="small"
-                            ),
-                        },
+                    rows_html = []
+                    for _, public_row in public_payment_df.iterrows():
+                        image_url = str(public_row.get("Hình ảnh") or "").strip()
+                        if image_url:
+                            safe_url = html_lib.escape(image_url, quote=True)
+                            image_html = (
+                                f'<img class="proof-thumb" src="{safe_url}" '
+                                f'ondblclick="openProof(this.src)" '
+                                f'title="Nhấp đúp để phóng lớn" alt="Ảnh chuyển khoản">'
+                            )
+                        else:
+                            image_html = ""
+
+                        note_html = html_lib.escape(
+                            str(public_row.get("Ghi chú") or "")
+                        ).replace("\n", "<br>")
+
+                        rows_html.append(
+                            "<tr>"
+                            f"<td>{html_lib.escape(str(public_row.get('Họ tên') or ''))}</td>"
+                            f"<td>{html_lib.escape(str(public_row.get('Cần thanh toán') or ''))}</td>"
+                            f"<td class='image-cell'>{image_html}</td>"
+                            f"<td>{html_lib.escape(str(public_row.get('Trạng thái') or ''))}</td>"
+                            f"<td>{note_html}</td>"
+                            f"<td>{html_lib.escape(str(public_row.get('Đã thanh toán đến') or ''))}</td>"
+                            "</tr>"
+                        )
+
+                    public_table_html = """
+                    <!doctype html>
+                    <html>
+                    <head>
+                    <meta charset="utf-8">
+                    <style>
+                        * { box-sizing: border-box; }
+                        body {
+                            margin: 0;
+                            font-family: Arial, Helvetica, sans-serif;
+                            color: #172033;
+                            background: transparent;
+                        }
+                        .table-wrap {
+                            width: 100%;
+                            overflow-x: auto;
+                            border: 1px solid #e5e7eb;
+                            border-radius: 12px;
+                            background: white;
+                        }
+                        table {
+                            width: 100%;
+                            min-width: 900px;
+                            border-collapse: collapse;
+                            table-layout: fixed;
+                            font-size: 14px;
+                        }
+                        th {
+                            background: #f8fafc;
+                            color: #7b8494;
+                            font-weight: 500;
+                            text-align: left;
+                            height: 42px;
+                            padding: 8px 10px;
+                            border-bottom: 1px solid #dfe3e8;
+                            border-right: 1px solid #e5e7eb;
+                        }
+                        td {
+                            height: 68px;
+                            padding: 7px 10px;
+                            vertical-align: middle;
+                            border-bottom: 1px solid #e5e7eb;
+                            border-right: 1px solid #e5e7eb;
+                            line-height: 1.35;
+                            word-wrap: break-word;
+                        }
+                        th:last-child, td:last-child { border-right: none; }
+                        tr:last-child td { border-bottom: none; }
+                        th:nth-child(1) { width: 19%; }
+                        th:nth-child(2) { width: 13%; }
+                        th:nth-child(3) { width: 10%; }
+                        th:nth-child(4) { width: 20%; }
+                        th:nth-child(5) { width: 25%; }
+                        th:nth-child(6) { width: 13%; }
+
+                        .image-cell { text-align: center; }
+                        .proof-thumb {
+                            width: 52px;
+                            height: 52px;
+                            object-fit: cover;
+                            border-radius: 7px;
+                            border: 1px solid #e5e7eb;
+                            cursor: zoom-in;
+                            display: inline-block;
+                            user-select: none;
+                        }
+                        .proof-thumb:hover {
+                            box-shadow: 0 0 0 2px #ff6b6b;
+                        }
+                        #proof-modal {
+                            display: none;
+                            position: fixed;
+                            z-index: 99999;
+                            inset: 0;
+                            background: rgba(0,0,0,.78);
+                            align-items: center;
+                            justify-content: center;
+                            padding: 24px;
+                        }
+                        #proof-modal img {
+                            max-width: 92vw;
+                            max-height: 90vh;
+                            object-fit: contain;
+                            border-radius: 10px;
+                            background: white;
+                            box-shadow: 0 18px 60px rgba(0,0,0,.45);
+                        }
+                        #proof-modal .hint {
+                            position: absolute;
+                            top: 14px;
+                            right: 18px;
+                            color: white;
+                            font-size: 14px;
+                            background: rgba(0,0,0,.35);
+                            padding: 7px 11px;
+                            border-radius: 20px;
+                        }
+                    </style>
+                    </head>
+                    <body>
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Họ tên</th>
+                                        <th>Số tiền tháng</th>
+                                        <th>Hình ảnh</th>
+                                        <th>Trạng thái</th>
+                                        <th>Ghi chú</th>
+                                        <th>Đã thanh toán đến</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                    """ + "".join(rows_html) + """
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div id="proof-modal" onclick="closeProof()">
+                            <div class="hint">Bấm vào nền tối để đóng</div>
+                            <img id="proof-large" src="" alt="Ảnh chuyển khoản phóng lớn">
+                        </div>
+
+                        <script>
+                            function openProof(src) {
+                                const modal = document.getElementById("proof-modal");
+                                document.getElementById("proof-large").src = src;
+                                modal.style.display = "flex";
+                            }
+                            function closeProof() {
+                                const modal = document.getElementById("proof-modal");
+                                modal.style.display = "none";
+                                document.getElementById("proof-large").src = "";
+                            }
+                            document.addEventListener("keydown", function(e) {
+                                if (e.key === "Escape") closeProof();
+                            });
+                        </script>
+                    </body>
+                    </html>
+                    """
+
+                    table_height = min(
+                        620,
+                        max(130, 44 + 69 * len(public_payment_df))
+                    )
+                    components.html(
+                        public_table_html,
+                        height=table_height,
+                        scrolling=True,
                     )
                     st.caption(
-                        "Trạng thái thanh toán do quản trị viên xác nhận. "
-                        "Mọi người có thể xem, nhưng không thể chỉnh sửa."
+                        "Ảnh chuyển khoản hiển thị dạng nhỏ. Nhấp đúp trực tiếp vào ảnh để phóng lớn; "
+                        "bấm vào nền tối hoặc phím Esc để đóng."
                     )
             else:
                 st.caption("Tháng này chưa phát sinh tiền cơm để đối chiếu.")
