@@ -1624,6 +1624,255 @@ def save_monthly_payment(member_id, member_name, year, month, amount_due, paid, 
     return supabase.table("monthly_payments").insert(payload).execute()
 
 # ============================================================
+# CHAT HỖ TRỢ TRỰC TUYẾN
+# ============================================================
+def _chat_client():
+    """Ưu tiên client server-side để chat vẫn hoạt động khi RLS đang bật."""
+    return admin_supabase or supabase
+
+
+def get_chat_session_id():
+    if "support_chat_session_id" not in st.session_state:
+        st.session_state["support_chat_session_id"] = uuid.uuid4().hex
+    return st.session_state["support_chat_session_id"]
+
+
+def get_or_create_support_conversation(customer_name):
+    client = _chat_client()
+    if client is None:
+        raise RuntimeError("Chưa kết nối được Supabase.")
+
+    session_id = get_chat_session_id()
+    result = (
+        client.table("support_conversations")
+        .select("*")
+        .eq("session_id", session_id)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    if rows:
+        row = rows[0]
+        clean_name = str(customer_name or "Khách").strip() or "Khách"
+        if row.get("customer_name") != clean_name:
+            client.table("support_conversations").update({
+                "customer_name": clean_name,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("id", row["id"]).execute()
+        return int(row["id"])
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    created = client.table("support_conversations").insert({
+        "customer_name": str(customer_name or "Khách").strip() or "Khách",
+        "session_id": session_id,
+        "status": "open",
+        "created_at": now_iso,
+        "updated_at": now_iso,
+    }).execute()
+    return int(created.data[0]["id"])
+
+
+def load_support_messages(conversation_id):
+    client = _chat_client()
+    if client is None:
+        return []
+    result = (
+        client.table("support_messages")
+        .select("*")
+        .eq("conversation_id", int(conversation_id))
+        .order("created_at")
+        .execute()
+    )
+    return result.data or []
+
+
+def send_support_message(conversation_id, sender, message):
+    client = _chat_client()
+    if client is None:
+        raise RuntimeError("Chưa kết nối được Supabase.")
+    text = str(message or "").strip()
+    if not text:
+        return
+    now_iso = datetime.now(timezone.utc).isoformat()
+    client.table("support_messages").insert({
+        "conversation_id": int(conversation_id),
+        "sender": sender,
+        "message": text,
+        "created_at": now_iso,
+        "is_read": False,
+    }).execute()
+    client.table("support_conversations").update({
+        "updated_at": now_iso,
+        "status": "open",
+    }).eq("id", int(conversation_id)).execute()
+
+
+def load_support_conversations():
+    client = _chat_client()
+    if client is None:
+        return []
+    result = (
+        client.table("support_conversations")
+        .select("*")
+        .order("updated_at", desc=True)
+        .execute()
+    )
+    return result.data or []
+
+
+def unread_support_count(conversation_id, sender="customer"):
+    client = _chat_client()
+    if client is None:
+        return 0
+    result = (
+        client.table("support_messages")
+        .select("id")
+        .eq("conversation_id", int(conversation_id))
+        .eq("sender", sender)
+        .eq("is_read", False)
+        .execute()
+    )
+    return len(result.data or [])
+
+
+def mark_support_messages_read(conversation_id, sender):
+    client = _chat_client()
+    if client is None:
+        return
+    client.table("support_messages").update({"is_read": True}).eq(
+        "conversation_id", int(conversation_id)
+    ).eq("sender", sender).eq("is_read", False).execute()
+
+
+def format_chat_time(value):
+    if not value:
+        return ""
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone(timedelta(hours=7))).strftime("%H:%M • %d/%m")
+    except Exception:
+        return ""
+
+
+def render_customer_support_chat():
+    st.subheader("💬 Hỗ trợ trực tuyến")
+    st.caption("Gửi câu hỏi tại đây. Quản trị viên sẽ phản hồi ngay trong cuộc trò chuyện này.")
+
+    default_name = st.session_state.get("member_name") or ""
+    customer_name = st.text_input(
+        "Tên của bạn",
+        value=default_name,
+        placeholder="Ví dụ: Nguyễn Văn A",
+        key="support_customer_name",
+        disabled=bool(default_name),
+    )
+
+    if not customer_name.strip():
+        st.info("Vui lòng nhập tên để bắt đầu trò chuyện.")
+        return
+
+    try:
+        conversation_id = get_or_create_support_conversation(customer_name)
+        mark_support_messages_read(conversation_id, "admin")
+        messages = load_support_messages(conversation_id)
+    except Exception as exc:
+        st.error("Chưa mở được hộp hỗ trợ. Hãy chạy file SQL tạo bảng chat trong Supabase trước.")
+        st.caption(str(exc))
+        return
+
+    st.markdown("#### Cuộc trò chuyện")
+    if not messages:
+        st.info("👋 Xin chào! Bạn cần hỗ trợ vấn đề gì về đặt cơm hoặc thanh toán?")
+    else:
+        for msg in messages:
+            role = "user" if msg.get("sender") == "customer" else "assistant"
+            label = "Bạn" if role == "user" else "Hỗ trợ"
+            with st.chat_message(role):
+                st.markdown(html_lib.escape(str(msg.get("message", ""))))
+                st.caption(f"{label} • {format_chat_time(msg.get('created_at'))}")
+
+    prompt = st.chat_input("Nhập nội dung cần hỗ trợ...", key="support_customer_chat_input")
+    if prompt:
+        try:
+            send_support_message(conversation_id, "customer", prompt)
+            st.rerun()
+        except Exception as exc:
+            st.error("Không gửi được tin nhắn.")
+            st.caption(str(exc))
+
+    c1, c2 = st.columns([1, 4])
+    with c1:
+        if st.button("🔄 Làm mới", key="support_customer_refresh", use_container_width=True):
+            st.rerun()
+    with c2:
+        st.caption("Tin nhắn được lưu trên Supabase nên không mất khi ứng dụng chạy lại.")
+
+
+def render_admin_support_chat():
+    st.subheader("💬 Hỗ trợ khách hàng")
+    st.success("Khu vực dành cho quản trị viên trả lời các câu hỏi hỗ trợ.")
+
+    try:
+        conversations = load_support_conversations()
+    except Exception as exc:
+        st.error("Chưa đọc được dữ liệu chat. Hãy chạy file SQL tạo bảng chat trong Supabase trước.")
+        st.caption(str(exc))
+        return
+
+    if not conversations:
+        st.info("Hiện chưa có cuộc trò chuyện nào.")
+        return
+
+    labels = []
+    conv_by_label = {}
+    for conv in conversations:
+        unread = unread_support_count(conv["id"], "customer")
+        badge = f" 🔴 {unread} mới" if unread else ""
+        label = f"{conv.get('customer_name') or 'Khách'}{badge} — {format_chat_time(conv.get('updated_at'))}"
+        labels.append(label)
+        conv_by_label[label] = conv
+
+    selected_label = st.selectbox(
+        "Chọn người cần hỗ trợ",
+        labels,
+        key="admin_support_conversation_select",
+    )
+    conv = conv_by_label[selected_label]
+    conversation_id = int(conv["id"])
+    mark_support_messages_read(conversation_id, "customer")
+
+    head1, head2 = st.columns([4, 1])
+    with head1:
+        st.markdown(f"#### 👤 {html_lib.escape(str(conv.get('customer_name') or 'Khách'))}")
+        st.caption(f"Trạng thái: {conv.get('status', 'open')} • Cập nhật {format_chat_time(conv.get('updated_at'))}")
+    with head2:
+        if st.button("🔄 Làm mới", key="admin_support_refresh", use_container_width=True):
+            st.rerun()
+
+    messages = load_support_messages(conversation_id)
+    for msg in messages:
+        is_customer = msg.get("sender") == "customer"
+        role = "user" if is_customer else "assistant"
+        label = "Khách" if is_customer else "Quản trị"
+        with st.chat_message(role):
+            st.markdown(html_lib.escape(str(msg.get("message", ""))))
+            st.caption(f"{label} • {format_chat_time(msg.get('created_at'))}")
+
+    reply = st.chat_input(
+        f"Trả lời {conv.get('customer_name') or 'khách'}...",
+        key=f"admin_support_reply_{conversation_id}",
+    )
+    if reply:
+        try:
+            send_support_message(conversation_id, "admin", reply)
+            st.rerun()
+        except Exception as exc:
+            st.error("Không gửi được phản hồi.")
+            st.caption(str(exc))
+
+# ============================================================
 # HỘP THOẠI THÔNG BÁO ĐẶT CƠM THÀNH CÔNG
 # Chỉ khi bấm OK mới xóa trắng form.
 # ============================================================
@@ -1906,15 +2155,17 @@ if "member_logged_in" not in st.session_state:
     st.session_state["show_member_change_password"] = False
 
 if not is_admin:
-    tab1, tab2, tab3, member_tab, login_tab = st.tabs([
+    tab1, tab2, tab3, support_tab, member_tab, login_tab = st.tabs([
         "📝 Đặt cơm",
         "📋 Đơn theo ngày",
         "📊 Tổng hợp",
+        "💬 Hỗ trợ",
         "👤 Tài khoản thành viên",
         "🔐 Đăng nhập quản trị"
     ])
     tab4 = None
     tab5 = None
+    admin_support_tab = None
 
     with login_tab:
         st.subheader("🔐 Đăng nhập quản trị")
@@ -1947,11 +2198,13 @@ if not is_admin:
 
 else:
     member_tab = None
-    tab1, tab2, tab3, logout_tab, tab4, tab5 = st.tabs([
+    support_tab = None
+    tab1, tab2, tab3, logout_tab, admin_support_tab, tab4, tab5 = st.tabs([
         "📝 Đặt cơm",
         "📋 Đơn theo ngày",
         "📊 Tổng hợp",
         "🔓 Đăng xuất quản trị",
+        "💬 Hỗ trợ khách hàng",
         "👩‍💼 Quản trị thực đơn",
         "👥 Quản trị thành viên"
     ])
@@ -1966,6 +2219,18 @@ else:
         ):
             st.session_state["admin_logged_in"] = False
             st.rerun()
+
+
+# ============================================================
+# CHAT HỖ TRỢ
+# ============================================================
+if support_tab is not None:
+    with support_tab:
+        render_customer_support_chat()
+
+if is_admin and admin_support_tab is not None:
+    with admin_support_tab:
+        render_admin_support_chat()
 
 
 # ============================================================
