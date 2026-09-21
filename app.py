@@ -1331,6 +1331,24 @@ def _order_created_at(row):
         return None
 
 
+def _dedupe_payment_note(note):
+    """Loại bỏ các dòng ghi chú bị lặp, giữ nguyên thứ tự."""
+    raw = str(note or "").strip()
+    if not raw:
+        return ""
+
+    # Hỗ trợ cả ghi chú nhiều dòng và dữ liệu cũ bị nối lặp.
+    lines = [line.strip() for line in raw.splitlines() if line.strip()]
+    unique = []
+    seen = set()
+    for line in lines:
+        key = " ".join(line.split()).casefold()
+        if key not in seen:
+            seen.add(key)
+            unique.append(line)
+    return "\n".join(unique)
+
+
 def calculate_outstanding_amount(member_name, year, month, payment=None, order_rows=None):
     """Tính số tiền phát sinh SAU thời điểm xác nhận gần nhất trong tháng."""
     if order_rows is None:
@@ -1624,255 +1642,6 @@ def save_monthly_payment(member_id, member_name, year, month, amount_due, paid, 
     return supabase.table("monthly_payments").insert(payload).execute()
 
 # ============================================================
-# CHAT HỖ TRỢ TRỰC TUYẾN
-# ============================================================
-def _chat_client():
-    """Ưu tiên client server-side để chat vẫn hoạt động khi RLS đang bật."""
-    return admin_supabase or supabase
-
-
-def get_chat_session_id():
-    if "support_chat_session_id" not in st.session_state:
-        st.session_state["support_chat_session_id"] = uuid.uuid4().hex
-    return st.session_state["support_chat_session_id"]
-
-
-def get_or_create_support_conversation(customer_name):
-    client = _chat_client()
-    if client is None:
-        raise RuntimeError("Chưa kết nối được Supabase.")
-
-    session_id = get_chat_session_id()
-    result = (
-        client.table("support_conversations")
-        .select("*")
-        .eq("session_id", session_id)
-        .limit(1)
-        .execute()
-    )
-    rows = result.data or []
-    if rows:
-        row = rows[0]
-        clean_name = str(customer_name or "Khách").strip() or "Khách"
-        if row.get("customer_name") != clean_name:
-            client.table("support_conversations").update({
-                "customer_name": clean_name,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }).eq("id", row["id"]).execute()
-        return int(row["id"])
-
-    now_iso = datetime.now(timezone.utc).isoformat()
-    created = client.table("support_conversations").insert({
-        "customer_name": str(customer_name or "Khách").strip() or "Khách",
-        "session_id": session_id,
-        "status": "open",
-        "created_at": now_iso,
-        "updated_at": now_iso,
-    }).execute()
-    return int(created.data[0]["id"])
-
-
-def load_support_messages(conversation_id):
-    client = _chat_client()
-    if client is None:
-        return []
-    result = (
-        client.table("support_messages")
-        .select("*")
-        .eq("conversation_id", int(conversation_id))
-        .order("created_at")
-        .execute()
-    )
-    return result.data or []
-
-
-def send_support_message(conversation_id, sender, message):
-    client = _chat_client()
-    if client is None:
-        raise RuntimeError("Chưa kết nối được Supabase.")
-    text = str(message or "").strip()
-    if not text:
-        return
-    now_iso = datetime.now(timezone.utc).isoformat()
-    client.table("support_messages").insert({
-        "conversation_id": int(conversation_id),
-        "sender": sender,
-        "message": text,
-        "created_at": now_iso,
-        "is_read": False,
-    }).execute()
-    client.table("support_conversations").update({
-        "updated_at": now_iso,
-        "status": "open",
-    }).eq("id", int(conversation_id)).execute()
-
-
-def load_support_conversations():
-    client = _chat_client()
-    if client is None:
-        return []
-    result = (
-        client.table("support_conversations")
-        .select("*")
-        .order("updated_at", desc=True)
-        .execute()
-    )
-    return result.data or []
-
-
-def unread_support_count(conversation_id, sender="customer"):
-    client = _chat_client()
-    if client is None:
-        return 0
-    result = (
-        client.table("support_messages")
-        .select("id")
-        .eq("conversation_id", int(conversation_id))
-        .eq("sender", sender)
-        .eq("is_read", False)
-        .execute()
-    )
-    return len(result.data or [])
-
-
-def mark_support_messages_read(conversation_id, sender):
-    client = _chat_client()
-    if client is None:
-        return
-    client.table("support_messages").update({"is_read": True}).eq(
-        "conversation_id", int(conversation_id)
-    ).eq("sender", sender).eq("is_read", False).execute()
-
-
-def format_chat_time(value):
-    if not value:
-        return ""
-    try:
-        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone(timedelta(hours=7))).strftime("%H:%M • %d/%m")
-    except Exception:
-        return ""
-
-
-def render_customer_support_chat():
-    st.subheader("💬 Hỗ trợ trực tuyến")
-    st.caption("Gửi câu hỏi tại đây. Quản trị viên sẽ phản hồi ngay trong cuộc trò chuyện này.")
-
-    default_name = st.session_state.get("member_name") or ""
-    customer_name = st.text_input(
-        "Tên của bạn",
-        value=default_name,
-        placeholder="Ví dụ: Nguyễn Văn A",
-        key="support_customer_name",
-        disabled=bool(default_name),
-    )
-
-    if not customer_name.strip():
-        st.info("Vui lòng nhập tên để bắt đầu trò chuyện.")
-        return
-
-    try:
-        conversation_id = get_or_create_support_conversation(customer_name)
-        mark_support_messages_read(conversation_id, "admin")
-        messages = load_support_messages(conversation_id)
-    except Exception as exc:
-        st.error("Chưa mở được hộp hỗ trợ. Hãy chạy file SQL tạo bảng chat trong Supabase trước.")
-        st.caption(str(exc))
-        return
-
-    st.markdown("#### Cuộc trò chuyện")
-    if not messages:
-        st.info("👋 Xin chào! Bạn cần hỗ trợ vấn đề gì về đặt cơm hoặc thanh toán?")
-    else:
-        for msg in messages:
-            role = "user" if msg.get("sender") == "customer" else "assistant"
-            label = "Bạn" if role == "user" else "Hỗ trợ"
-            with st.chat_message(role):
-                st.markdown(html_lib.escape(str(msg.get("message", ""))))
-                st.caption(f"{label} • {format_chat_time(msg.get('created_at'))}")
-
-    prompt = st.chat_input("Nhập nội dung cần hỗ trợ...", key="support_customer_chat_input")
-    if prompt:
-        try:
-            send_support_message(conversation_id, "customer", prompt)
-            st.rerun()
-        except Exception as exc:
-            st.error("Không gửi được tin nhắn.")
-            st.caption(str(exc))
-
-    c1, c2 = st.columns([1, 4])
-    with c1:
-        if st.button("🔄 Làm mới", key="support_customer_refresh", use_container_width=True):
-            st.rerun()
-    with c2:
-        st.caption("Tin nhắn được lưu trên Supabase nên không mất khi ứng dụng chạy lại.")
-
-
-def render_admin_support_chat():
-    st.subheader("💬 Hỗ trợ khách hàng")
-    st.success("Khu vực dành cho quản trị viên trả lời các câu hỏi hỗ trợ.")
-
-    try:
-        conversations = load_support_conversations()
-    except Exception as exc:
-        st.error("Chưa đọc được dữ liệu chat. Hãy chạy file SQL tạo bảng chat trong Supabase trước.")
-        st.caption(str(exc))
-        return
-
-    if not conversations:
-        st.info("Hiện chưa có cuộc trò chuyện nào.")
-        return
-
-    labels = []
-    conv_by_label = {}
-    for conv in conversations:
-        unread = unread_support_count(conv["id"], "customer")
-        badge = f" 🔴 {unread} mới" if unread else ""
-        label = f"{conv.get('customer_name') or 'Khách'}{badge} — {format_chat_time(conv.get('updated_at'))}"
-        labels.append(label)
-        conv_by_label[label] = conv
-
-    selected_label = st.selectbox(
-        "Chọn người cần hỗ trợ",
-        labels,
-        key="admin_support_conversation_select",
-    )
-    conv = conv_by_label[selected_label]
-    conversation_id = int(conv["id"])
-    mark_support_messages_read(conversation_id, "customer")
-
-    head1, head2 = st.columns([4, 1])
-    with head1:
-        st.markdown(f"#### 👤 {html_lib.escape(str(conv.get('customer_name') or 'Khách'))}")
-        st.caption(f"Trạng thái: {conv.get('status', 'open')} • Cập nhật {format_chat_time(conv.get('updated_at'))}")
-    with head2:
-        if st.button("🔄 Làm mới", key="admin_support_refresh", use_container_width=True):
-            st.rerun()
-
-    messages = load_support_messages(conversation_id)
-    for msg in messages:
-        is_customer = msg.get("sender") == "customer"
-        role = "user" if is_customer else "assistant"
-        label = "Khách" if is_customer else "Quản trị"
-        with st.chat_message(role):
-            st.markdown(html_lib.escape(str(msg.get("message", ""))))
-            st.caption(f"{label} • {format_chat_time(msg.get('created_at'))}")
-
-    reply = st.chat_input(
-        f"Trả lời {conv.get('customer_name') or 'khách'}...",
-        key=f"admin_support_reply_{conversation_id}",
-    )
-    if reply:
-        try:
-            send_support_message(conversation_id, "admin", reply)
-            st.rerun()
-        except Exception as exc:
-            st.error("Không gửi được phản hồi.")
-            st.caption(str(exc))
-
-# ============================================================
 # HỘP THOẠI THÔNG BÁO ĐẶT CƠM THÀNH CÔNG
 # Chỉ khi bấm OK mới xóa trắng form.
 # ============================================================
@@ -2155,17 +1924,15 @@ if "member_logged_in" not in st.session_state:
     st.session_state["show_member_change_password"] = False
 
 if not is_admin:
-    tab1, tab2, tab3, support_tab, member_tab, login_tab = st.tabs([
+    tab1, tab2, tab3, member_tab, login_tab = st.tabs([
         "📝 Đặt cơm",
         "📋 Đơn theo ngày",
         "📊 Tổng hợp",
-        "💬 Hỗ trợ",
         "👤 Tài khoản thành viên",
         "🔐 Đăng nhập quản trị"
     ])
     tab4 = None
     tab5 = None
-    admin_support_tab = None
 
     with login_tab:
         st.subheader("🔐 Đăng nhập quản trị")
@@ -2198,13 +1965,11 @@ if not is_admin:
 
 else:
     member_tab = None
-    support_tab = None
-    tab1, tab2, tab3, logout_tab, admin_support_tab, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, logout_tab, tab4, tab5 = st.tabs([
         "📝 Đặt cơm",
         "📋 Đơn theo ngày",
         "📊 Tổng hợp",
         "🔓 Đăng xuất quản trị",
-        "💬 Hỗ trợ khách hàng",
         "👩‍💼 Quản trị thực đơn",
         "👥 Quản trị thành viên"
     ])
@@ -2219,18 +1984,6 @@ else:
         ):
             st.session_state["admin_logged_in"] = False
             st.rerun()
-
-
-# ============================================================
-# CHAT HỖ TRỢ
-# ============================================================
-if support_tab is not None:
-    with support_tab:
-        render_customer_support_chat()
-
-if is_admin and admin_support_tab is not None:
-    with admin_support_tab:
-        render_admin_support_chat()
 
 
 # ============================================================
@@ -3687,7 +3440,7 @@ with tab3:
                     "Trạng thái": status_text,
                     "Tiền giảm": 0,
                     "Chú thích": "",
-                    "Ghi chú": str(payment.get("payment_note") or ""),
+                    "Ghi chú": _dedupe_payment_note(payment.get("payment_note")),
                     "Đã thanh toán đến": received_text,
                 })
 
@@ -3695,7 +3448,7 @@ with tab3:
                     "member_id": member_id,
                     "amount_due": int(outstanding),
                     "old_paid": is_paid,
-                    "old_note": str(payment.get("payment_note") or ""),
+                    "old_note": _dedupe_payment_note(payment.get("payment_note")),
                     "old_discount": int(payment.get("discount_amount", 0) or 0),
                     "paid_cutoff": paid_cutoff,
                 }
@@ -3721,6 +3474,12 @@ with tab3:
                     payment_df_for_edit = payment_df[
                         ["Họ tên", "Cần thanh toán", "Hình ảnh", "Xem lớn", "Trạng thái", "Tiền giảm", "Chú thích", "Ghi chú", "Đã thanh toán đến"]
                     ].copy()
+
+                    editor_version_key = (
+                        f"payment_editor_version_{selected_year}_{selected_month}"
+                    )
+                    if editor_version_key not in st.session_state:
+                        st.session_state[editor_version_key] = 0
 
                     edited_payment_df = st.data_editor(
                         payment_df_for_edit,
@@ -3785,7 +3544,10 @@ with tab3:
                                 width="small"
                             ),
                         },
-                        key=f"payment_editor_{selected_year}_{selected_month}",
+                        key=(
+                            f"payment_editor_{selected_year}_{selected_month}_"
+                            f"{st.session_state[editor_version_key]}"
+                        ),
                     )
 
                     st.markdown("#### 🛠️ Quản lý hình ảnh chuyển khoản")
@@ -3939,7 +3701,7 @@ with tab3:
                                 except (TypeError, ValueError):
                                     added_discount = 0
 
-                                old_note = meta.get("old_note", "")
+                                old_note = _dedupe_payment_note(meta.get("old_note", ""))
                                 old_discount = int(meta.get("old_discount", 0) or 0)
                                 new_discount = old_discount
                                 new_note = old_note
@@ -3955,7 +3717,16 @@ with tab3:
                                     if old_note_is_receipt:
                                         new_note = discount_line
                                     elif old_note:
-                                        new_note = old_note + "\n" + discount_line
+                                        existing_lines = {
+                                            " ".join(line.split()).casefold()
+                                            for line in old_note.splitlines()
+                                            if line.strip()
+                                        }
+                                        discount_key = " ".join(discount_line.split()).casefold()
+                                        if discount_key not in existing_lines:
+                                            new_note = old_note + "\n" + discount_line
+                                        else:
+                                            new_note = old_note
                                     else:
                                         new_note = discount_line
 
@@ -4001,9 +3772,12 @@ with tab3:
                                     changed_count += 1
 
                             if changed_count:
+                                # Tạo editor mới ở lần rerun kế tiếp để hai ô nhập tạm
+                                # "Tiền giảm" và "Chú thích" trở về trắng/0 thật sự.
+                                st.session_state[editor_version_key] += 1
                                 st.success(
                                     f"Đã cập nhật {changed_count} thành viên. "
-                                    "Ngày xác nhận đã tự lấy theo ngày hệ thống."
+                                    "Các ô Tiền giảm và Chú thích đã được làm trống."
                                 )
                             else:
                                 st.info("Không có thay đổi nào cần cập nhật.")
