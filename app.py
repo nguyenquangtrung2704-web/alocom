@@ -2422,15 +2422,43 @@ with tab1:
             )
 
             # ========================================================
-            # V35 - CHỌN MÓN TRỰC TIẾP TRÊN THẺ + SỐ LƯỢNG
-            # Bỏ hoàn toàn combobox/multiselect chọn món bên dưới.
+            # TÌM KIẾM NHANH MÓN ĂN
+            # ========================================================
+            dish_names = [
+                str(item.get("dish_name") or "").strip()
+                for item in active_menu
+                if str(item.get("dish_name") or "").strip()
+            ]
+
+            searched_dish = st.selectbox(
+                "🔎 Tìm kiếm món ăn",
+                options=["-- Xem tất cả món --"] + dish_names,
+                key=f"dish_search_{reset_id}",
+                help=(
+                    "Bấm vào ô và gõ tên món để tìm nhanh, "
+                    "hoặc chọn món trong danh sách xổ xuống."
+                )
+            )
+
+            if searched_dish != "-- Xem tất cả món --":
+                st.success(f"🍽️ Món bạn đang tìm: **{searched_dish}**")
+
+            # ========================================================
+            # CHỌN MÓN TRỰC TIẾP TRÊN THẺ + SỐ LƯỢNG
             # ========================================================
             expand_key = f"show_all_menu_{reset_id}"
             if expand_key not in st.session_state:
                 st.session_state[expand_key] = False
 
             show_all_menu = st.session_state[expand_key]
-            display_items = active_menu if show_all_menu else active_menu[:8]
+
+            if searched_dish != "-- Xem tất cả món --":
+                display_items = [
+                    item for item in active_menu
+                    if str(item.get("dish_name") or "").strip() == searched_dish
+                ]
+            else:
+                display_items = active_menu if show_all_menu else active_menu[:8]
 
             order_lines = []
             grand_total = 0
@@ -2495,7 +2523,7 @@ with tab1:
                                     )
 
             # Nút xem thêm toàn bộ món đang bán.
-            if len(active_menu) > 8:
+            if searched_dish == "-- Xem tất cả món --" and len(active_menu) > 8:
                 remain_count = len(active_menu) - 8
                 info_col, btn_col = st.columns([5.5, 1.5])
 
