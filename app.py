@@ -1895,7 +1895,7 @@ st.markdown(f"""
         padding:5px 8px 7px 8px;
         background:#fffaf2;
     ">
-        ⏰ Vui lòng đặt cơm trước 10g30' mỗi ngày
+        ⏰ Vui lòng đặt cơm trước 10g00 mỗi ngày
     </div>
 </div>
 """, unsafe_allow_html=True)
