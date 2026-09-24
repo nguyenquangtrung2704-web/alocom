@@ -1895,7 +1895,7 @@ st.markdown(f"""
         padding:5px 8px 7px 8px;
         background:#fffaf2;
     ">
-        ⏰ Vui lòng đặt cơm trước 10g00 mỗi ngày
+        ⏰ Vui lòng đặt cơm trước 10g30' mỗi ngày
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -1905,6 +1905,112 @@ if supabase is None:
         "Chưa kết nối được Supabase. "
         "Kiểm tra SUPABASE_URL và SUPABASE_KEY trong Streamlit Secrets."
     )
+else:
+    # ========================================================
+    # ĐẾM NGƯỜI ĐANG ONLINE
+    # Mỗi phiên trình duyệt có một mã riêng. JavaScript gửi heartbeat
+    # mỗi 60 giây; phiên không hoạt động quá 5 phút sẽ không còn được tính.
+    # ========================================================
+    if "online_session_id" not in st.session_state:
+        st.session_state["online_session_id"] = str(uuid.uuid4())
+
+    _online_session_id = st.session_state["online_session_id"]
+    _online_url = str(st.secrets["SUPABASE_URL"]).rstrip("/")
+    _online_key = str(st.secrets["SUPABASE_KEY"])
+
+    _online_widget = f"""
+    <!doctype html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        * {{ box-sizing: border-box; }}
+        body {{
+          margin: 0;
+          font-family: Arial, Helvetica, sans-serif;
+          background: transparent;
+        }}
+        .online-wrap {{
+          display: flex;
+          justify-content: flex-end;
+          align-items: center;
+          min-height: 42px;
+          padding: 2px 0;
+        }}
+        .online-badge {{
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 14px;
+          border-radius: 9px;
+          background: #6f98c9;
+          color: white;
+          font-size: 15px;
+          font-weight: 800;
+          box-shadow: 0 2px 7px rgba(0,0,0,.10);
+          white-space: nowrap;
+        }}
+        .online-dot {{
+          width: 9px;
+          height: 9px;
+          border-radius: 50%;
+          background: #36d37e;
+          box-shadow: 0 0 0 3px rgba(54,211,126,.20);
+        }}
+        @media (max-width: 700px) {{
+          .online-wrap {{ justify-content: center; }}
+          .online-badge {{ font-size: 14px; }}
+        }}
+      </style>
+    </head>
+    <body>
+      <div class="online-wrap">
+        <div class="online-badge">
+          <span>👥</span>
+          <span>ĐANG ONLINE (<span id="online-count">...</span>)</span>
+          <span class="online-dot"></span>
+        </div>
+      </div>
+
+      <script>
+        const SB_URL = {json.dumps(_online_url)};
+        const SB_KEY = {json.dumps(_online_key)};
+        const SESSION_ID = {json.dumps(_online_session_id)};
+
+        async function rpc(name, body) {{
+          const response = await fetch(`${{SB_URL}}/rest/v1/rpc/${{name}}`, {{
+            method: "POST",
+            headers: {{
+              "apikey": SB_KEY,
+              "Authorization": `Bearer ${{SB_KEY}}`,
+              "Content-Type": "application/json"
+            }},
+            body: JSON.stringify(body || {{}})
+          }});
+          if (!response.ok) {{
+            throw new Error(await response.text());
+          }}
+          return await response.json();
+        }}
+
+        async function heartbeatAndCount() {{
+          try {{
+            await rpc("touch_online_session", {{ p_session_id: SESSION_ID }});
+            const count = await rpc("count_online_sessions", {{}});
+            document.getElementById("online-count").textContent =
+              Number.isFinite(Number(count)) ? Number(count) : 0;
+          }} catch (e) {{
+            document.getElementById("online-count").textContent = "—";
+          }}
+        }}
+
+        heartbeatAndCount();
+        setInterval(heartbeatAndCount, 60000);
+      </script>
+    </body>
+    </html>
+    """
+    components.html(_online_widget, height=48, scrolling=False)
 
 # ============================================================
 # ĐĂNG NHẬP / ĐĂNG XUẤT QUẢN TRỊ
@@ -3500,7 +3606,7 @@ with tab3:
                     # Trong chế độ quản trị, hiển thị ảnh trực tiếp ngay trong
                     # cột "Hình ảnh", giống bảng mà thành viên/người xem công khai thấy.
                     payment_df_for_edit = payment_df[
-                        ["Họ tên", "Cần thanh toán", "Hình ảnh", "Xem lớn", "Trạng thái", "Tiền giảm", "Chú thích", "Ghi chú", "Đã thanh toán đến"]
+                        ["Họ tên", "Cần thanh toán", "Hình ảnh", "Trạng thái", "Tiền giảm", "Chú thích", "Ghi chú", "Đã thanh toán đến"]
                     ].copy()
 
                     editor_version_key = (
@@ -3518,7 +3624,6 @@ with tab3:
                             "Họ tên",
                             "Cần thanh toán",
                             "Hình ảnh",
-                            "Xem lớn",
                             "Ghi chú",
                             "Đã thanh toán đến"
                         ],
@@ -3534,12 +3639,6 @@ with tab3:
                             "Hình ảnh": st.column_config.ImageColumn(
                                 "Hình ảnh",
                                 help="Ảnh minh chứng chuyển khoản.",
-                                width="small"
-                            ),
-                            "Xem lớn": st.column_config.LinkColumn(
-                                "Xem",
-                                help="Bấm để mở ảnh kích thước lớn.",
-                                display_text="🔍 Phóng lớn",
                                 width="small"
                             ),
                             "Trạng thái": st.column_config.SelectboxColumn(
