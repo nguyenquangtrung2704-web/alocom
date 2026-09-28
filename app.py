@@ -1388,6 +1388,22 @@ def calculate_outstanding_amount(member_name, year, month, payment=None, order_r
     if discount_is_current:
         total = max(0, total - discount_amount)
 
+    surcharge_amount = int(payment.get("surcharge_amount", 0) or 0)
+    surcharge_applied_at = _parse_payment_cutoff(payment.get("surcharge_applied_at"))
+
+    # Chỉ cộng khoản tăng đang áp dụng cho đợt thanh toán hiện tại.
+    surcharge_is_current = (
+        surcharge_amount > 0
+        and (
+            surcharge_applied_at is None
+            or cutoff is None
+            or surcharge_applied_at > cutoff
+        )
+    )
+
+    if surcharge_is_current:
+        total += surcharge_amount
+
     return total
 
 
@@ -1573,7 +1589,7 @@ def load_monthly_payments(year, month):
     return {int(r["member_id"]): r for r in (result.data or [])}
 
 
-def save_monthly_payment(member_id, member_name, year, month, amount_due, paid, payment_note="", discount_amount=0):
+def save_monthly_payment(member_id, member_name, year, month, amount_due, paid, payment_note="", discount_amount=0, surcharge_amount=0):
     """Lưu xác nhận thanh toán theo thời điểm.
 
     Khi quản trị viên bấm Đã thanh toán:
@@ -1600,10 +1616,15 @@ def save_monthly_payment(member_id, member_name, year, month, amount_due, paid, 
     discount_applied_at = existing_row.get("discount_applied_at")
     discount_amount = max(0, int(discount_amount or 0))
 
-    # Nếu quản trị viên thay đổi số tiền giảm thì đây là khoản giảm mới
-    # dành cho đợt thanh toán hiện tại.
+    old_surcharge = int(existing_row.get("surcharge_amount", 0) or 0)
+    surcharge_applied_at = existing_row.get("surcharge_applied_at")
+    surcharge_amount = max(0, int(surcharge_amount or 0))
+
+    # Nếu quản trị viên thay đổi khoản giảm/tăng thì áp dụng cho đợt hiện tại.
     if discount_amount != old_discount:
         discount_applied_at = None
+    if surcharge_amount != old_surcharge:
+        surcharge_applied_at = None
 
     if paid:
         # Mỗi lần xác nhận một khoản phát sinh mới, chốt đến đúng thời điểm bấm Cập nhật.
@@ -1611,6 +1632,8 @@ def save_monthly_payment(member_id, member_name, year, month, amount_due, paid, 
         paid_through_at = now_iso
         if discount_amount > 0:
             discount_applied_at = now_iso
+        if surcharge_amount > 0:
+            surcharge_applied_at = now_iso
     elif not existing_row:
         received_at = None
         paid_through_at = None
@@ -1626,6 +1649,8 @@ def save_monthly_payment(member_id, member_name, year, month, amount_due, paid, 
         "payment_note": str(payment_note or "").strip(),
         "discount_amount": discount_amount,
         "discount_applied_at": discount_applied_at,
+        "surcharge_amount": surcharge_amount,
+        "surcharge_applied_at": surcharge_applied_at,
         "received_at": received_at,
         "paid_through_at": paid_through_at,
         "updated_at": now_iso,
@@ -3574,6 +3599,7 @@ with tab3:
                     "Xem lớn": proof_url or "",
                     "Trạng thái": status_text,
                     "Tiền giảm": 0,
+                    "Tiền tăng": 0,
                     "Chú thích": "",
                     "Ghi chú": _dedupe_payment_note(payment.get("payment_note")),
                     "Đã thanh toán đến": received_text,
@@ -3585,6 +3611,7 @@ with tab3:
                     "old_paid": is_paid,
                     "old_note": _dedupe_payment_note(payment.get("payment_note")),
                     "old_discount": int(payment.get("discount_amount", 0) or 0),
+                    "old_surcharge": int(payment.get("surcharge_amount", 0) or 0),
                     "paid_cutoff": paid_cutoff,
                 }
 
@@ -3607,7 +3634,7 @@ with tab3:
                     # Trong chế độ quản trị, hiển thị ảnh trực tiếp ngay trong
                     # cột "Hình ảnh", giống bảng mà thành viên/người xem công khai thấy.
                     payment_df_for_edit = payment_df[
-                        ["Họ tên", "Cần thanh toán", "Hình ảnh", "Trạng thái", "Tiền giảm", "Chú thích", "Ghi chú", "Đã thanh toán đến"]
+                        ["Họ tên", "Cần thanh toán", "Hình ảnh", "Trạng thái", "Tiền giảm", "Tiền tăng", "Chú thích", "Ghi chú", "Đã thanh toán đến"]
                     ].copy()
 
                     editor_version_key = (
@@ -3656,9 +3683,17 @@ with tab3:
                                 format="%d đ",
                                 width="small"
                             ),
+                            "Tiền tăng": st.column_config.NumberColumn(
+                                "Tiền tăng",
+                                help="Nhập khoản tăng MỚI. Sau khi Cập nhật ô này sẽ trở về 0.",
+                                min_value=0,
+                                step=1000,
+                                format="%d đ",
+                                width="small"
+                            ),
                             "Chú thích": st.column_config.TextColumn(
                                 "Chú thích",
-                                help="Nhập lý do cho khoản giảm mới. Nếu nhận tiền mặt, có thể nhập: Nhận tiền mặt.",
+                                help="Nhập lý do cho khoản giảm hoặc tăng mới. Nếu nhận tiền mặt, có thể nhập: Nhận tiền mặt.",
                                 width="large"
                             ),
                             "Ghi chú": st.column_config.TextColumn(
@@ -3803,7 +3838,7 @@ with tab3:
                     st.caption(
                         "💡 Sau khi kiểm tra hình chuyển khoản và đổi trạng thái, "
                         "bấm nút Cập nhật bên dưới để lưu. "
-                        "Mỗi lần giảm giá: nhập số tiền ở “Tiền giảm” và lý do ở “Chú thích”, rồi bấm Cập nhật. Hệ thống sẽ cộng khoản giảm và tự thêm một dòng vào “Ghi chú”; hai ô nhập sẽ trắng lại. Khi chuyển sang 🟢 Đã thanh toán, “Ghi chú” sẽ được thay bằng ngày giờ nhận tiền. Nếu nhận tiền mặt, nhập “Nhận tiền mặt” ở ô Chú thích trước khi bấm Cập nhật."
+                        "Mỗi lần điều chỉnh: nhập số tiền ở “Tiền giảm” hoặc “Tiền tăng” và lý do ở “Chú thích”, rồi bấm Cập nhật. Hệ thống sẽ tự trừ/cộng vào tổng tiền và thêm một dòng vào “Ghi chú”; các ô nhập tạm sẽ trắng lại. Khi chuyển sang 🟢 Đã thanh toán, “Ghi chú” sẽ được thay bằng ngày giờ nhận tiền. Nếu nhận tiền mặt, nhập “Nhận tiền mặt” ở ô Chú thích trước khi bấm Cập nhật."
                     )
 
                     if st.button(
@@ -3828,10 +3863,16 @@ with tab3:
                                     added_discount = max(0, int(edited_row.get("Tiền giảm", 0) or 0))
                                 except (TypeError, ValueError):
                                     added_discount = 0
+                                try:
+                                    added_surcharge = max(0, int(edited_row.get("Tiền tăng", 0) or 0))
+                                except (TypeError, ValueError):
+                                    added_surcharge = 0
 
                                 old_note = _dedupe_payment_note(meta.get("old_note", ""))
                                 old_discount = int(meta.get("old_discount", 0) or 0)
+                                old_surcharge = int(meta.get("old_surcharge", 0) or 0)
                                 new_discount = old_discount
+                                new_surcharge = old_surcharge
                                 new_note = old_note
                                 old_note_is_receipt = (
                                     old_note.startswith("Đã nhận chuyển khoản lúc ")
@@ -3858,6 +3899,24 @@ with tab3:
                                     else:
                                         new_note = discount_line
 
+                                if added_surcharge > 0:
+                                    new_surcharge = old_surcharge + added_surcharge
+                                    detail = annotation if annotation else "Không có chú thích"
+                                    surcharge_line = f"Tăng {money(added_surcharge)}: {detail}"
+                                    if old_note_is_receipt:
+                                        new_note = surcharge_line
+                                    elif new_note:
+                                        existing_lines = {
+                                            " ".join(line.split()).casefold()
+                                            for line in new_note.splitlines()
+                                            if line.strip()
+                                        }
+                                        surcharge_key = " ".join(surcharge_line.split()).casefold()
+                                        if surcharge_key not in existing_lines:
+                                            new_note = new_note + "\n" + surcharge_line
+                                    else:
+                                        new_note = surcharge_line
+
                                 cash_hint = (
                                     "tiền mặt" in annotation.lower()
                                     or "tiền mặt" in old_note.lower()
@@ -3879,6 +3938,7 @@ with tab3:
                                     existing_payment is None
                                     or meta["old_paid"] != new_paid
                                     or added_discount > 0
+                                    or added_surcharge > 0
                                     or bool(annotation)
                                     or (
                                         new_paid
@@ -3896,16 +3956,17 @@ with tab3:
                                         new_paid,
                                         new_note,
                                         new_discount,
+                                        new_surcharge,
                                     )
                                     changed_count += 1
 
                             if changed_count:
                                 # Tạo editor mới ở lần rerun kế tiếp để hai ô nhập tạm
-                                # "Tiền giảm" và "Chú thích" trở về trắng/0 thật sự.
+                                # "Tiền giảm", "Tiền tăng" và "Chú thích" trở về trắng/0 thật sự.
                                 st.session_state[editor_version_key] += 1
                                 st.success(
                                     f"Đã cập nhật {changed_count} thành viên. "
-                                    "Các ô Tiền giảm và Chú thích đã được làm trống."
+                                    "Các ô Tiền giảm, Tiền tăng và Chú thích đã được làm trống."
                                 )
                             else:
                                 st.info("Không có thay đổi nào cần cập nhật.")
