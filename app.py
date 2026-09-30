@@ -2045,7 +2045,7 @@ else:
 # KHÓA / MỞ TRANG ĐẶT CƠM (TRẠNG THÁI CHUNG CHO MỌI NGƯỜI)
 # ============================================================
 SITE_CLOSED_MESSAGE = (
-    "Tạm ngưng phục vụ đặt cơm online do nhu cầu khách quan. "
+    "Tạm ngưng phục vụ đặt cơm online do tính khách quan. "
     "Cảm ơn bạn !!!"
 )
 
