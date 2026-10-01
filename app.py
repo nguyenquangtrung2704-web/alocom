@@ -2078,7 +2078,7 @@ def outside_ordering_hours():
     return not (time(7, 0) <= local_time < time(10, 30))
 
 SITE_CLOSED_MESSAGE = (
-    "Tạm ngưng phục vụ đặt cơm online do nhu cầu khách quan. "
+    "Chưa đến giờ đặt cơm online. Khung giờ đặt cơm ghi chi tiết bên dưới. "
     "Cảm ơn bạn !!!"
 )
 
